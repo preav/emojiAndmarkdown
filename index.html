@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8">
+	<title> Emojis </title>
+	<!------- EMOJIS --------->
+	<script type="text/javascript" src="./node_modules/jquery/dist/jquery.js"></script>
+	<link rel="stylesheet" type="text/css" href="./node_modules/emojionearea/dist/emojionearea.css">
+	<script type="text/javascript" src="./node_modules/emojionearea/dist/emojionearea.js"></script>
+	<!------- EMOJIS END--------->
+</head>
+<body>
+	<!------- EMOJIS --------->
+	<textarea id="message"> </textarea>
+	<script type="text/javascript">
+		$('#message').emojioneArea({ pickerPosition : "bottom"})
+	</script>
+	<!------- EMOJIS END--------->
+
+	<!------- MARKDOWN --------->
+	<textarea id="inpText"></textarea>
+	<button id="send"> Send </button>
+	<p id="mark"></p>
+	<script type="text/javascript" src='./build/bundle.js'></script>
+	<!------- MARKDOWN END--------->
+</body>
+</html>
