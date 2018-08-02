@@ -86,6 +86,416 @@
 /************************************************************************/
 /******/ ({
 
+/***/ "./node_modules/debug/src/browser.js":
+/*!*******************************************!*\
+  !*** ./node_modules/debug/src/browser.js ***!
+  \*******************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+/* WEBPACK VAR INJECTION */(function(process) {/**
+ * This is the web browser implementation of `debug()`.
+ *
+ * Expose `debug()` as the module.
+ */
+
+exports = module.exports = __webpack_require__(/*! ./debug */ "./node_modules/debug/src/debug.js");
+exports.log = log;
+exports.formatArgs = formatArgs;
+exports.save = save;
+exports.load = load;
+exports.useColors = useColors;
+exports.storage = 'undefined' != typeof chrome
+               && 'undefined' != typeof chrome.storage
+                  ? chrome.storage.local
+                  : localstorage();
+
+/**
+ * Colors.
+ */
+
+exports.colors = [
+  'lightseagreen',
+  'forestgreen',
+  'goldenrod',
+  'dodgerblue',
+  'darkorchid',
+  'crimson'
+];
+
+/**
+ * Currently only WebKit-based Web Inspectors, Firefox >= v31,
+ * and the Firebug extension (any Firefox version) are known
+ * to support "%c" CSS customizations.
+ *
+ * TODO: add a `localStorage` variable to explicitly enable/disable colors
+ */
+
+function useColors() {
+  // NB: In an Electron preload script, document will be defined but not fully
+  // initialized. Since we know we're in Chrome, we'll just detect this case
+  // explicitly
+  if (typeof window !== 'undefined' && window.process && window.process.type === 'renderer') {
+    return true;
+  }
+
+  // is webkit? http://stackoverflow.com/a/16459606/376773
+  // document is undefined in react-native: https://github.com/facebook/react-native/pull/1632
+  return (typeof document !== 'undefined' && document.documentElement && document.documentElement.style && document.documentElement.style.WebkitAppearance) ||
+    // is firebug? http://stackoverflow.com/a/398120/376773
+    (typeof window !== 'undefined' && window.console && (window.console.firebug || (window.console.exception && window.console.table))) ||
+    // is firefox >= v31?
+    // https://developer.mozilla.org/en-US/docs/Tools/Web_Console#Styling_messages
+    (typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.toLowerCase().match(/firefox\/(\d+)/) && parseInt(RegExp.$1, 10) >= 31) ||
+    // double check webkit in userAgent just in case we are in a worker
+    (typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.toLowerCase().match(/applewebkit\/(\d+)/));
+}
+
+/**
+ * Map %j to `JSON.stringify()`, since no Web Inspectors do that by default.
+ */
+
+exports.formatters.j = function(v) {
+  try {
+    return JSON.stringify(v);
+  } catch (err) {
+    return '[UnexpectedJSONParseError]: ' + err.message;
+  }
+};
+
+
+/**
+ * Colorize log arguments if enabled.
+ *
+ * @api public
+ */
+
+function formatArgs(args) {
+  var useColors = this.useColors;
+
+  args[0] = (useColors ? '%c' : '')
+    + this.namespace
+    + (useColors ? ' %c' : ' ')
+    + args[0]
+    + (useColors ? '%c ' : ' ')
+    + '+' + exports.humanize(this.diff);
+
+  if (!useColors) return;
+
+  var c = 'color: ' + this.color;
+  args.splice(1, 0, c, 'color: inherit')
+
+  // the final "%c" is somewhat tricky, because there could be other
+  // arguments passed either before or after the %c, so we need to
+  // figure out the correct index to insert the CSS into
+  var index = 0;
+  var lastC = 0;
+  args[0].replace(/%[a-zA-Z%]/g, function(match) {
+    if ('%%' === match) return;
+    index++;
+    if ('%c' === match) {
+      // we only are interested in the *last* %c
+      // (the user may have provided their own)
+      lastC = index;
+    }
+  });
+
+  args.splice(lastC, 0, c);
+}
+
+/**
+ * Invokes `console.log()` when available.
+ * No-op when `console.log` is not a "function".
+ *
+ * @api public
+ */
+
+function log() {
+  // this hackery is required for IE8/9, where
+  // the `console.log` function doesn't have 'apply'
+  return 'object' === typeof console
+    && console.log
+    && Function.prototype.apply.call(console.log, console, arguments);
+}
+
+/**
+ * Save `namespaces`.
+ *
+ * @param {String} namespaces
+ * @api private
+ */
+
+function save(namespaces) {
+  try {
+    if (null == namespaces) {
+      exports.storage.removeItem('debug');
+    } else {
+      exports.storage.debug = namespaces;
+    }
+  } catch(e) {}
+}
+
+/**
+ * Load `namespaces`.
+ *
+ * @return {String} returns the previously persisted debug modes
+ * @api private
+ */
+
+function load() {
+  var r;
+  try {
+    r = exports.storage.debug;
+  } catch(e) {}
+
+  // If debug isn't set in LS, and we're in Electron, try to load $DEBUG
+  if (!r && typeof process !== 'undefined' && 'env' in process) {
+    r = process.env.DEBUG;
+  }
+
+  return r;
+}
+
+/**
+ * Enable namespaces listed in `localStorage.debug` initially.
+ */
+
+exports.enable(load());
+
+/**
+ * Localstorage attempts to return the localstorage.
+ *
+ * This is necessary because safari throws
+ * when a user disables cookies/localstorage
+ * and you attempt to access it.
+ *
+ * @return {LocalStorage}
+ * @api private
+ */
+
+function localstorage() {
+  try {
+    return window.localStorage;
+  } catch (e) {}
+}
+
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(/*! ./../../process/browser.js */ "./node_modules/process/browser.js")))
+
+/***/ }),
+
+/***/ "./node_modules/debug/src/debug.js":
+/*!*****************************************!*\
+  !*** ./node_modules/debug/src/debug.js ***!
+  \*****************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+
+/**
+ * This is the common logic for both the Node.js and web browser
+ * implementations of `debug()`.
+ *
+ * Expose `debug()` as the module.
+ */
+
+exports = module.exports = createDebug.debug = createDebug['default'] = createDebug;
+exports.coerce = coerce;
+exports.disable = disable;
+exports.enable = enable;
+exports.enabled = enabled;
+exports.humanize = __webpack_require__(/*! ms */ "./node_modules/ms/index.js");
+
+/**
+ * The currently active debug mode names, and names to skip.
+ */
+
+exports.names = [];
+exports.skips = [];
+
+/**
+ * Map of special "%n" handling functions, for the debug "format" argument.
+ *
+ * Valid key names are a single, lower or upper-case letter, i.e. "n" and "N".
+ */
+
+exports.formatters = {};
+
+/**
+ * Previous log timestamp.
+ */
+
+var prevTime;
+
+/**
+ * Select a color.
+ * @param {String} namespace
+ * @return {Number}
+ * @api private
+ */
+
+function selectColor(namespace) {
+  var hash = 0, i;
+
+  for (i in namespace) {
+    hash  = ((hash << 5) - hash) + namespace.charCodeAt(i);
+    hash |= 0; // Convert to 32bit integer
+  }
+
+  return exports.colors[Math.abs(hash) % exports.colors.length];
+}
+
+/**
+ * Create a debugger with the given `namespace`.
+ *
+ * @param {String} namespace
+ * @return {Function}
+ * @api public
+ */
+
+function createDebug(namespace) {
+
+  function debug() {
+    // disabled?
+    if (!debug.enabled) return;
+
+    var self = debug;
+
+    // set `diff` timestamp
+    var curr = +new Date();
+    var ms = curr - (prevTime || curr);
+    self.diff = ms;
+    self.prev = prevTime;
+    self.curr = curr;
+    prevTime = curr;
+
+    // turn the `arguments` into a proper Array
+    var args = new Array(arguments.length);
+    for (var i = 0; i < args.length; i++) {
+      args[i] = arguments[i];
+    }
+
+    args[0] = exports.coerce(args[0]);
+
+    if ('string' !== typeof args[0]) {
+      // anything else let's inspect with %O
+      args.unshift('%O');
+    }
+
+    // apply any `formatters` transformations
+    var index = 0;
+    args[0] = args[0].replace(/%([a-zA-Z%])/g, function(match, format) {
+      // if we encounter an escaped % then don't increase the array index
+      if (match === '%%') return match;
+      index++;
+      var formatter = exports.formatters[format];
+      if ('function' === typeof formatter) {
+        var val = args[index];
+        match = formatter.call(self, val);
+
+        // now we need to remove `args[index]` since it's inlined in the `format`
+        args.splice(index, 1);
+        index--;
+      }
+      return match;
+    });
+
+    // apply env-specific formatting (colors, etc.)
+    exports.formatArgs.call(self, args);
+
+    var logFn = debug.log || exports.log || console.log.bind(console);
+    logFn.apply(self, args);
+  }
+
+  debug.namespace = namespace;
+  debug.enabled = exports.enabled(namespace);
+  debug.useColors = exports.useColors();
+  debug.color = selectColor(namespace);
+
+  // env-specific initialization logic for debug instances
+  if ('function' === typeof exports.init) {
+    exports.init(debug);
+  }
+
+  return debug;
+}
+
+/**
+ * Enables a debug mode by namespaces. This can include modes
+ * separated by a colon and wildcards.
+ *
+ * @param {String} namespaces
+ * @api public
+ */
+
+function enable(namespaces) {
+  exports.save(namespaces);
+
+  exports.names = [];
+  exports.skips = [];
+
+  var split = (typeof namespaces === 'string' ? namespaces : '').split(/[\s,]+/);
+  var len = split.length;
+
+  for (var i = 0; i < len; i++) {
+    if (!split[i]) continue; // ignore empty strings
+    namespaces = split[i].replace(/\*/g, '.*?');
+    if (namespaces[0] === '-') {
+      exports.skips.push(new RegExp('^' + namespaces.substr(1) + '$'));
+    } else {
+      exports.names.push(new RegExp('^' + namespaces + '$'));
+    }
+  }
+}
+
+/**
+ * Disable debug output.
+ *
+ * @api public
+ */
+
+function disable() {
+  exports.enable('');
+}
+
+/**
+ * Returns true if the given mode name is enabled, false otherwise.
+ *
+ * @param {String} name
+ * @return {Boolean}
+ * @api public
+ */
+
+function enabled(name) {
+  var i, len;
+  for (i = 0, len = exports.skips.length; i < len; i++) {
+    if (exports.skips[i].test(name)) {
+      return false;
+    }
+  }
+  for (i = 0, len = exports.names.length; i < len; i++) {
+    if (exports.names[i].test(name)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Coerce `val`.
+ *
+ * @param {Mixed} val
+ * @return {Mixed}
+ * @api private
+ */
+
+function coerce(val) {
+  if (val instanceof Error) return val.stack || val.message;
+  return val;
+}
+
+
+/***/ }),
+
 /***/ "./node_modules/inherits/inherits_browser.js":
 /*!***************************************************!*\
   !*** ./node_modules/inherits/inherits_browser.js ***!
@@ -1867,6 +2277,472 @@ function merge_text_nodes( jsonml ) {
 
 /***/ }),
 
+/***/ "./node_modules/ms/index.js":
+/*!**********************************!*\
+  !*** ./node_modules/ms/index.js ***!
+  \**********************************/
+/*! no static exports found */
+/***/ (function(module, exports) {
+
+/**
+ * Helpers.
+ */
+
+var s = 1000;
+var m = s * 60;
+var h = m * 60;
+var d = h * 24;
+var y = d * 365.25;
+
+/**
+ * Parse or format the given `val`.
+ *
+ * Options:
+ *
+ *  - `long` verbose formatting [false]
+ *
+ * @param {String|Number} val
+ * @param {Object} [options]
+ * @throws {Error} throw an error if val is not a non-empty string or a number
+ * @return {String|Number}
+ * @api public
+ */
+
+module.exports = function(val, options) {
+  options = options || {};
+  var type = typeof val;
+  if (type === 'string' && val.length > 0) {
+    return parse(val);
+  } else if (type === 'number' && isNaN(val) === false) {
+    return options.long ? fmtLong(val) : fmtShort(val);
+  }
+  throw new Error(
+    'val is not a non-empty string or a valid number. val=' +
+      JSON.stringify(val)
+  );
+};
+
+/**
+ * Parse the given `str` and return milliseconds.
+ *
+ * @param {String} str
+ * @return {Number}
+ * @api private
+ */
+
+function parse(str) {
+  str = String(str);
+  if (str.length > 100) {
+    return;
+  }
+  var match = /^((?:\d+)?\.?\d+) *(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|years?|yrs?|y)?$/i.exec(
+    str
+  );
+  if (!match) {
+    return;
+  }
+  var n = parseFloat(match[1]);
+  var type = (match[2] || 'ms').toLowerCase();
+  switch (type) {
+    case 'years':
+    case 'year':
+    case 'yrs':
+    case 'yr':
+    case 'y':
+      return n * y;
+    case 'days':
+    case 'day':
+    case 'd':
+      return n * d;
+    case 'hours':
+    case 'hour':
+    case 'hrs':
+    case 'hr':
+    case 'h':
+      return n * h;
+    case 'minutes':
+    case 'minute':
+    case 'mins':
+    case 'min':
+    case 'm':
+      return n * m;
+    case 'seconds':
+    case 'second':
+    case 'secs':
+    case 'sec':
+    case 's':
+      return n * s;
+    case 'milliseconds':
+    case 'millisecond':
+    case 'msecs':
+    case 'msec':
+    case 'ms':
+      return n;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Short format for `ms`.
+ *
+ * @param {Number} ms
+ * @return {String}
+ * @api private
+ */
+
+function fmtShort(ms) {
+  if (ms >= d) {
+    return Math.round(ms / d) + 'd';
+  }
+  if (ms >= h) {
+    return Math.round(ms / h) + 'h';
+  }
+  if (ms >= m) {
+    return Math.round(ms / m) + 'm';
+  }
+  if (ms >= s) {
+    return Math.round(ms / s) + 's';
+  }
+  return ms + 'ms';
+}
+
+/**
+ * Long format for `ms`.
+ *
+ * @param {Number} ms
+ * @return {String}
+ * @api private
+ */
+
+function fmtLong(ms) {
+  return plural(ms, d, 'day') ||
+    plural(ms, h, 'hour') ||
+    plural(ms, m, 'minute') ||
+    plural(ms, s, 'second') ||
+    ms + ' ms';
+}
+
+/**
+ * Pluralization helper.
+ */
+
+function plural(ms, n, name) {
+  if (ms < n) {
+    return;
+  }
+  if (ms < n * 1.5) {
+    return Math.floor(ms / n) + ' ' + name;
+  }
+  return Math.ceil(ms / n) + ' ' + name + 's';
+}
+
+
+/***/ }),
+
+/***/ "./node_modules/node-fetch/browser.js":
+/*!********************************************!*\
+  !*** ./node_modules/node-fetch/browser.js ***!
+  \********************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+module.exports = exports = self.fetch;
+
+// Needed for TypeScript and Webpack.
+exports.default = self.fetch.bind(self);
+
+exports.Headers = self.Headers;
+exports.Request = self.Request;
+exports.Response = self.Response;
+
+
+/***/ }),
+
+/***/ "./node_modules/oembed-parser/index.js":
+/*!*********************************************!*\
+  !*** ./node_modules/oembed-parser/index.js ***!
+  \*********************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+/* WEBPACK VAR INJECTION */(function(global) {/**
+ * Starting app
+ * @ndaidong
+**/
+
+global.Promise = __webpack_require__(/*! promise-wtf */ "./node_modules/promise-wtf/dist/promise-wtf.min.js");
+
+const main = __webpack_require__(/*! ./src/main */ "./node_modules/oembed-parser/src/main.js");
+main.version = __webpack_require__(/*! ./package.json */ "./node_modules/oembed-parser/package.json").version;
+
+module.exports = main;
+
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(/*! ./../webpack/buildin/global.js */ "./node_modules/webpack/buildin/global.js")))
+
+/***/ }),
+
+/***/ "./node_modules/oembed-parser/package.json":
+/*!*************************************************!*\
+  !*** ./node_modules/oembed-parser/package.json ***!
+  \*************************************************/
+/*! exports provided: _from, _id, _inBundle, _integrity, _location, _phantomChildren, _requested, _requiredBy, _resolved, _shasum, _spec, _where, author, bugs, bundleDependencies, dependencies, deprecated, description, devDependencies, engines, homepage, keywords, license, main, name, repository, scripts, version, default */
+/***/ (function(module) {
+
+module.exports = {"_from":"oembed-parser","_id":"oembed-parser@1.1.1","_inBundle":false,"_integrity":"sha512-/TeVdTM1W0y66pWaqg0gl/ywb010siUil4QjiQ/v1i1sQlE6W767HxAcB0sh57Gy2HlWzTsnROJXU15AG5W5Hw==","_location":"/oembed-parser","_phantomChildren":{},"_requested":{"type":"tag","registry":true,"raw":"oembed-parser","name":"oembed-parser","escapedName":"oembed-parser","rawSpec":"","saveSpec":null,"fetchSpec":"latest"},"_requiredBy":["#USER","/"],"_resolved":"https://registry.npmjs.org/oembed-parser/-/oembed-parser-1.1.1.tgz","_shasum":"6c7e8fb87faefbf99a9408f87325151e274aa80a","_spec":"oembed-parser","_where":"C:\\Users\\preyadav1\\vagrant-ubuntu-xenial-node-8-master\\vagrant-ubuntu-xenial-node-8-master\\emoji","author":{"name":"@ndaidong"},"bugs":{"url":"https://github.com/ndaidong/oembed-parser/issues"},"bundleDependencies":false,"dependencies":{"bellajs":"^7.2.2","node-fetch":"^2.1.2","promise-wtf":"^1.2.4"},"deprecated":false,"description":"Get oEmbed data from given URL.","devDependencies":{"debug":"^3.1.0","eslint":"^4.19.1","eslint-config-goes":"^1.0.0","tap":"^12.0.1"},"engines":{"node":">= 6.0"},"homepage":"https://www.npmjs.com/package/oembed-parser","keywords":["oembed","extractor","parser","util"],"license":"MIT","main":"./index.js","name":"oembed-parser","repository":{"type":"git","url":"git+https://github.com/ndaidong/oembed-parser.git"},"scripts":{"lint":"eslint .","pretest":"npm run lint","reset":"node reset","start":"DEBUG=*:* node index","sync":"DEBUG=oembed-parser:* node sync","test":"tap test/start.js --coverage --reporter=spec"},"version":"1.1.1"};
+
+/***/ }),
+
+/***/ "./node_modules/oembed-parser/src/main.js":
+/*!************************************************!*\
+  !*** ./node_modules/oembed-parser/src/main.js ***!
+  \************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+// main
+
+const {
+  isValidURL,
+  findProvider,
+  fetchEmbed,
+} = __webpack_require__(/*! ./utils */ "./node_modules/oembed-parser/src/utils/index.js");
+
+const extract = (url) => {
+  return new Promise((resolve, reject) => {
+    if (!isValidURL(url)) {
+      return reject(new Error('Invalid input URL'));
+    }
+    let p = findProvider(url);
+    if (!p) {
+      return reject(new Error(`No provider found with given url "${url}"`));
+    }
+    return resolve(fetchEmbed(url, p));
+  });
+};
+
+const hasProvider = (url) => {
+  return findProvider(url) !== null;
+};
+
+module.exports = {
+  extract,
+  hasProvider,
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/oembed-parser/src/utils/fetchEmbed.js":
+/*!************************************************************!*\
+  !*** ./node_modules/oembed-parser/src/utils/fetchEmbed.js ***!
+  \************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+// utils -> fetchEmbed
+
+const fetch = __webpack_require__(/*! node-fetch */ "./node_modules/node-fetch/browser.js");
+
+const fetchEmbed = (url, provider) => {
+  return new Promise((resolve, reject) => {
+    let {
+      provider_name, // eslint-disable-line camelcase
+      provider_url, // eslint-disable-line camelcase
+      url: resourceUrl,
+    } = provider;
+
+    let link = `${resourceUrl}?format=json&url=${encodeURIComponent(url)}`;
+
+    return fetch(link).then((res) => {
+      return res.json();
+    }).then((json) => {
+      json.provider_name = provider_name; // eslint-disable-line camelcase
+      json.provider_url = provider_url; // eslint-disable-line camelcase
+      return resolve(json);
+    }).catch((err) => {
+      return reject(err);
+    });
+  });
+};
+
+module.exports = fetchEmbed;
+
+
+/***/ }),
+
+/***/ "./node_modules/oembed-parser/src/utils/findProvider.js":
+/*!**************************************************************!*\
+  !*** ./node_modules/oembed-parser/src/utils/findProvider.js ***!
+  \**************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+// utils -> findProvider
+
+
+const providerList = __webpack_require__(/*! ./providers.json */ "./node_modules/oembed-parser/src/utils/providers.json");
+
+const getHostname = (url) => {
+  let match = url.match(/:\/\/(www[0-9]?\.)?(.[^/:]+)/i);
+  if (match && match.length > 2 && typeof match[2] === 'string' && match[2].length > 0) {
+    return match[2];
+  }
+  return null;
+};
+
+const providers = providerList.map((item) => {
+  let {
+    provider_name, // eslint-disable-line camelcase
+    provider_url, // eslint-disable-line camelcase
+    endpoints,
+  } = item;
+
+  let endpoint = endpoints[0];
+  let {
+    schemes = [],
+    url,
+  } = endpoint;
+
+  let hostname = getHostname(url);
+  let domain = hostname ? hostname.replace('www.', '') : '';
+
+  return {
+    provider_name, // eslint-disable-line camelcase
+    provider_url, // eslint-disable-line camelcase
+    schemes,
+    domain,
+    url,
+  };
+}).filter((item) => {
+  return item.domain !== '';
+});
+
+const findProvider = (url) => {
+  let candidates = providers.filter((provider) => {
+    let {
+      schemes,
+      domain,
+    } = provider;
+    if (!schemes.length) {
+      return url.includes(domain);
+    }
+    return schemes.some((scheme) => {
+      let reg = new RegExp(scheme.replace(/\*/g, '(.*)'), 'i');
+      return url.match(reg);
+    });
+  });
+
+  return candidates.length > 0 ? candidates[0] : null;
+};
+
+module.exports = findProvider;
+
+
+/***/ }),
+
+/***/ "./node_modules/oembed-parser/src/utils/index.js":
+/*!*******************************************************!*\
+  !*** ./node_modules/oembed-parser/src/utils/index.js ***!
+  \*******************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+module.exports = {
+  isValidURL: __webpack_require__(/*! ./isValidURL */ "./node_modules/oembed-parser/src/utils/isValidURL.js"),
+  findProvider: __webpack_require__(/*! ./findProvider */ "./node_modules/oembed-parser/src/utils/findProvider.js"),
+  fetchEmbed: __webpack_require__(/*! ./fetchEmbed */ "./node_modules/oembed-parser/src/utils/fetchEmbed.js"),
+  logger: __webpack_require__(/*! ./logger */ "./node_modules/oembed-parser/src/utils/logger.js"),
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/oembed-parser/src/utils/isValidURL.js":
+/*!************************************************************!*\
+  !*** ./node_modules/oembed-parser/src/utils/isValidURL.js ***!
+  \************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports) {
+
+/**
+ * uri -> check if a url is valid
+ * @ndaidong
+ **/
+
+const isValidURL = (str) => {
+  if (!str) {
+    return false;
+  }
+
+  /* eslint-disable*/
+  let pattern = /^(?:(?:https?|ftp):\/\/)(?:\S+(?::\S*)?@)?(?:(?!(?:10|127)(?:\.\d{1,3}){3})(?!(?:169\.254|192\.168)(?:\.\d{1,3}){2})(?!172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2})(?:[1-9]\d?|1\d\d|2[01]\d|22[0-3])(?:\.(?:1?\d{1,2}|2[0-4]\d|25[0-5])){2}(?:\.(?:[1-9]\d?|1\d\d|2[0-4]\d|25[0-4]))|(?:(?:[a-z\u00a1-\uffff0-9]-*)*[a-z\u00a1-\uffff0-9]+)(?:\.(?:[a-z\u00a1-\uffff0-9]-*)*[a-z\u00a1-\uffff0-9]+)*(?:\.(?:[a-z\u00a1-\uffff]{2,}))\.?)(?::\d{2,5})?(?:[/?#]\S*)?$/i;
+  /* eslint-enable*/
+
+  if (!pattern.test(str)) {
+    return false;
+  }
+  return true;
+};
+
+module.exports = isValidURL;
+
+
+/***/ }),
+
+/***/ "./node_modules/oembed-parser/src/utils/logger.js":
+/*!********************************************************!*\
+  !*** ./node_modules/oembed-parser/src/utils/logger.js ***!
+  \********************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+// utils / logger
+
+const {
+  name,
+} = __webpack_require__(/*! ../../package.json */ "./node_modules/oembed-parser/package.json");
+
+const debug = __webpack_require__(/*! debug */ "./node_modules/debug/src/browser.js");
+
+const info = debug(`${name}:info`);
+const error = debug(`${name}:error`);
+const warning = debug(`${name}:warning`);
+
+module.exports = {
+  info,
+  error,
+  warning,
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/oembed-parser/src/utils/providers.json":
+/*!*************************************************************!*\
+  !*** ./node_modules/oembed-parser/src/utils/providers.json ***!
+  \*************************************************************/
+/*! exports provided: 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, default */
+/***/ (function(module) {
+
+module.exports = [{"provider_name":"23HQ","provider_url":"http://www.23hq.com","endpoints":[{"schemes":["http://www.23hq.com/*/photo/*"],"url":"http://www.23hq.com/23/oembed"}]},{"provider_name":"Adways","provider_url":"http://www.adways.com","endpoints":[{"schemes":["http://play.adpaths.com/experience/*"],"url":"http://play.adpaths.com/oembed/*"}]},{"provider_name":"Alpha App Net","provider_url":"https://alpha.app.net/browse/posts/","endpoints":[{"schemes":["https://alpha.app.net/*/post/*","https://photos.app.net/*/*"],"url":"https://alpha-api.app.net/oembed","formats":["json"]}]},{"provider_name":"amCharts Live Editor","provider_url":"http://live.amcharts.com/","endpoints":[{"schemes":["http://live.amcharts.com/*"],"url":"http://live.amcharts.com/oembed"}]},{"provider_name":"Animatron","provider_url":"https://www.animatron.com/","endpoints":[{"schemes":["https://www.animatron.com/project/*","https://animatron.com/project/*"],"url":"https://animatron.com/oembed/json","discovery":true}]},{"provider_name":"Animoto","provider_url":"http://animoto.com/","endpoints":[{"schemes":["http://animoto.com/play/*"],"url":"http://animoto.com/oembeds/create"}]},{"provider_name":"Audiomack","provider_url":"https://www.audiomack.com","endpoints":[{"schemes":["https://www.audiomack.com/song/*","https://www.audiomack.com/album/*","https://www.audiomack.com/playlist/*"],"url":"https://www.audiomack.com/oembed","discovery":true}]},{"provider_name":"AudioSnaps","provider_url":"http://audiosnaps.com","endpoints":[{"schemes":["http://audiosnaps.com/k/*"],"url":"http://audiosnaps.com/service/oembed","discovery":true}]},{"provider_name":"Beautiful.AI","provider_url":"https://www.beautiful.ai/","endpoints":[{"url":"https://www.beautiful.ai/api/oembed","discovery":true}]},{"provider_name":"Blackfire.io","provider_url":"https://blackfire.io","endpoints":[{"schemes":["https://blackfire.io/profiles/*/graph","https://blackfire.io/profiles/compare/*/graph"],"url":"https://blackfire.io/oembed","discovery":true}]},{"provider_name":"Box Office Buz","provider_url":"http://boxofficebuz.com","endpoints":[{"url":"http://boxofficebuz.com/oembed","discovery":true}]},{"provider_name":"Buttondown","provider_url":"https://buttondown.email/","endpoints":[{"schemes":["https://buttondown.email/*"],"url":"https://buttondown.email/embed","formats":["json"]}]},{"provider_name":"Cacoo","provider_url":"https://cacoo.com","endpoints":[{"schemes":["https://cacoo.com/diagrams/*"],"url":"http://cacoo.com/oembed.{format}"}]},{"provider_name":"Carbon Health","provider_url":"https://carbonhealth.com","endpoints":[{"schemes":["https://carbonhealth.com/practice/*"],"url":"http://carbonhealth.com/oembed","discovery":true}]},{"provider_name":"CatBoat","provider_url":"http://img.catbo.at/","endpoints":[{"schemes":["http://img.catbo.at/*"],"url":"http://img.catbo.at/oembed.json","formats":["json"]}]},{"provider_name":"Ceros","provider_url":"http://www.ceros.com/","endpoints":[{"schemes":["http://view.ceros.com/*"],"url":"http://view.ceros.com/oembed","discovery":true}]},{"provider_name":"ChartBlocks","provider_url":"http://www.chartblocks.com/","endpoints":[{"schemes":["http://public.chartblocks.com/c/*"],"url":"http://embed.chartblocks.com/1.0/oembed"}]},{"provider_name":"chirbit.com","provider_url":"http://www.chirbit.com/","endpoints":[{"schemes":["http://chirb.it/*"],"url":"http://chirb.it/oembed.{format}","discovery":true}]},{"provider_name":"CircuitLab","provider_url":"https://www.circuitlab.com/","endpoints":[{"schemes":["https://www.circuitlab.com/circuit/*"],"url":"https://www.circuitlab.com/circuit/oembed/","discovery":true}]},{"provider_name":"Clipland","provider_url":"http://www.clipland.com/","endpoints":[{"schemes":["http://www.clipland.com/v/*","https://www.clipland.com/v/*"],"url":"https://www.clipland.com/api/oembed","discovery":true}]},{"provider_name":"Clyp","provider_url":"http://clyp.it/","endpoints":[{"schemes":["http://clyp.it/*","http://clyp.it/playlist/*"],"url":"http://api.clyp.it/oembed/","discovery":true}]},{"provider_name":"Codepen","provider_url":"https://codepen.io","endpoints":[{"schemes":["http://codepen.io/*","https://codepen.io/*"],"url":"http://codepen.io/api/oembed"}]},{"provider_name":"Codepoints","provider_url":"https://codepoints.net","endpoints":[{"schemes":["http://codepoints.net/*","https://codepoints.net/*","http://www.codepoints.net/*","https://www.codepoints.net/*"],"url":"https://codepoints.net/api/v1/oembed","discovery":true}]},{"provider_name":"CodeSandbox","provider_url":"https://codesandbox.io","endpoints":[{"schemes":["https://codesandbox.io/s/*","https://codesandbox.io/embed/*"],"url":"https://codesandbox.io/oembed"}]},{"provider_name":"CollegeHumor","provider_url":"http://www.collegehumor.com/","endpoints":[{"schemes":["http://www.collegehumor.com/video/*"],"url":"http://www.collegehumor.com/oembed.{format}","discovery":true}]},{"provider_name":"Commaful","provider_url":"https://commaful.com","endpoints":[{"schemes":["https://commaful.com/play/*"],"url":"https://commaful.com/api/oembed/"}]},{"provider_name":"Coub","provider_url":"http://coub.com/","endpoints":[{"schemes":["http://coub.com/view/*","http://coub.com/embed/*"],"url":"http://coub.com/api/oembed.{format}"}]},{"provider_name":"Crowd Ranking","provider_url":"http://crowdranking.com","endpoints":[{"schemes":["http://crowdranking.com/*/*"],"url":"http://crowdranking.com/api/oembed.{format}"}]},{"provider_name":"Cyrano Systems","provider_url":"http://www.cyranosystems.com/","endpoints":[{"schemes":["https://staging.cyranosystems.com/msg/*","https://app.cyranosystems.com/msg/*"],"url":"https://staging.cyranosystems.com/oembed","formats":["json"],"discovery":true}]},{"provider_name":"Daily Mile","provider_url":"http://www.dailymile.com","endpoints":[{"schemes":["http://www.dailymile.com/people/*/entries/*"],"url":"http://api.dailymile.com/oembed?format=json","formats":["json"]}]},{"provider_name":"Dailymotion","provider_url":"http://www.dailymotion.com","endpoints":[{"schemes":["http://www.dailymotion.com/video/*"],"url":"http://www.dailymotion.com/services/oembed","discovery":true}]},{"provider_name":"Deviantart.com","provider_url":"http://www.deviantart.com","endpoints":[{"schemes":["http://*.deviantart.com/art/*","http://*.deviantart.com/*#/d*","http://fav.me/*","http://sta.sh/*"],"url":"http://backend.deviantart.com/oembed"}]},{"provider_name":"Didacte","provider_url":"https://www.didacte.com/","endpoints":[{"schemes":["https://*.didacte.com/a/course/*"],"url":"https://*.didacte.com/cards/oembed'","discovery":true,"formats":["json"]}]},{"provider_name":"Digiteka","provider_url":"https://www.ultimedia.com/","endpoints":[{"schemes":["https://www.ultimedia.com/central/video/edit/id/*/topic_id/*/","https://www.ultimedia.com/default/index/videogeneric/id/*/showtitle/1/viewnc/1","https://www.ultimedia.com/default/index/videogeneric/id/*"],"url":"https://www.ultimedia.com/api/search/oembed"}]},{"provider_name":"Dipity","provider_url":"http://www.dipity.com","endpoints":[{"schemes":["http://www.dipity.com/*/*/"],"url":"http://www.dipity.com/oembed/timeline/"}]},{"provider_name":"DocDroid","provider_url":"https://www.docdroid.net/","endpoints":[{"schemes":["https://*.docdroid.net/*","http://*.docdroid.net/*","https://docdro.id/*","http://docdro.id/*"],"url":"https://www.docdroid.net/api/oembed","formats":["json"],"discovery":true}]},{"provider_name":"Dotsub","provider_url":"http://dotsub.com/","endpoints":[{"schemes":["http://dotsub.com/view/*"],"url":"http://dotsub.com/services/oembed"}]},{"provider_name":"DTube","provider_url":"https://d.tube/","endpoints":[{"schemes":["https://d.tube/v/*"],"url":"https://api.d.tube/oembed","discovery":true}]},{"provider_name":"edocr","provider_url":"http://www.edocr.com","endpoints":[{"schemes":["http://edocr.com/docs/*"],"url":"http://edocr.com/api/oembed"}]},{"provider_name":"eduMedia","provider_url":"https://www.edumedia-sciences.com/","endpoints":[{"url":"https://www.edumedia-sciences.com/oembed.json","discovery":true},{"url":"https://www.edumedia-sciences.com/oembed.xml","discovery":true}]},{"provider_name":"EgliseInfo","provider_url":"http://egliseinfo.catholique.fr/","endpoints":[{"schemes":["http://egliseinfo.catholique.fr/*"],"url":"http://egliseinfo.catholique.fr/api/oembed","discovery":true}]},{"provider_name":"Embed Articles","provider_url":"http://embedarticles.com/","endpoints":[{"schemes":["http://embedarticles.com/*"],"url":"http://embedarticles.com/oembed/"}]},{"provider_name":"Embedly","provider_url":"http://api.embed.ly/","endpoints":[{"url":"http://api.embed.ly/1/oembed"}]},{"provider_name":"Ethfiddle","provider_url":"https://www.ethfiddle.com/","endpoints":[{"schemes":["https://ethfiddle.com/*"],"url":"https://ethfiddle.com/services/oembed/","discovery":true}]},{"provider_name":"Eyrie","provider_url":"https://eyrie.io/","endpoints":[{"schemes":["https://eyrie.io/board/*","https://eyrie.io/sparkfun/*"],"url":"https://eyrie.io/v1/oembed","discovery":true}]},{"provider_name":"Facebook (Video)","provider_url":"https://www.facebook.com/","endpoints":[{"schemes":["https://www.facebook.com/*/videos/*","https://www.facebook.com/video.php"],"url":"https://www.facebook.com/plugins/video/oembed.json","discovery":true}]},{"provider_name":"Faithlife TV","provider_url":"https://faithlifetv.com","endpoints":[{"schemes":["https://faithlifetv.com/items/*","https://faithlifetv.com/items/resource/*/*","https://faithlifetv.com/media/*","https://faithlifetv.com/media/assets/*","https://faithlifetv.com/media/resource/*/*"],"url":"https://faithlifetv.com/api/oembed","discovery":true}]},{"provider_name":"Flat","provider_url":"https://flat.io","endpoints":[{"schemes":["https://flat.io/score/*","https://*.flat.io/score/*"],"url":"https://flat.io/services/oembed","discovery":true}]},{"provider_name":"Flickr","provider_url":"http://www.flickr.com/","endpoints":[{"schemes":["http://*.flickr.com/photos/*","http://flic.kr/p/*"],"url":"http://www.flickr.com/services/oembed/","discovery":true}]},{"provider_name":"Flourish","provider_url":"https://flourish.studio/","endpoints":[{"schemes":["https://public.flourish.studio/visualisation/*","https://public.flourish.studio/story/*"],"url":"https://app.flourish.studio/api/v1/oembed","discovery":true}]},{"provider_name":"FOX SPORTS Australia","provider_url":"http://www.foxsports.com.au","endpoints":[{"schemes":["http://fiso.foxsports.com.au/isomorphic-widget/*","https://fiso.foxsports.com.au/isomorphic-widget/*"],"url":"https://fiso.foxsports.com.au/oembed"}]},{"provider_name":"FrameBuzz","provider_url":"https://framebuzz.com/","endpoints":[{"schemes":["http://framebuzz.com/v/*","https://framebuzz.com/v/*"],"url":"https://framebuzz.com/oembed/","discovery":true}]},{"provider_name":"FunnyOrDie","provider_url":"http://www.funnyordie.com/","endpoints":[{"schemes":["http://www.funnyordie.com/videos/*"],"url":"http://www.funnyordie.com/oembed.{format}"}]},{"provider_name":"Geograph Britain and Ireland","provider_url":"https://www.geograph.org.uk/","endpoints":[{"schemes":["http://*.geograph.org.uk/*","http://*.geograph.co.uk/*","http://*.geograph.ie/*","http://*.wikimedia.org/*_geograph.org.uk_*"],"url":"http://api.geograph.org.uk/api/oembed"}]},{"provider_name":"Geograph Channel Islands","provider_url":"http://channel-islands.geograph.org/","endpoints":[{"schemes":["http://*.geograph.org.gg/*","http://*.geograph.org.je/*","http://channel-islands.geograph.org/*","http://channel-islands.geographs.org/*","http://*.channel.geographs.org/*"],"url":"http://www.geograph.org.gg/api/oembed"}]},{"provider_name":"Geograph Germany","provider_url":"http://geo-en.hlipp.de/","endpoints":[{"schemes":["http://geo-en.hlipp.de/*","http://geo.hlipp.de/*","http://germany.geograph.org/*"],"url":"http://geo.hlipp.de/restapi.php/api/oembed"}]},{"provider_name":"Getty Images","provider_url":"http://www.gettyimages.com/","endpoints":[{"schemes":["http://gty.im/*"],"url":"http://embed.gettyimages.com/oembed","formats":["json"]}]},{"provider_name":"Gfycat","provider_url":"https://gfycat.com/","endpoints":[{"schemes":["http://gfycat.com/*","http://www.gfycat.com/*","https://gfycat.com/*","https://www.gfycat.com/*"],"url":"https://api.gfycat.com/v1/oembed","discovery":true}]},{"provider_name":"GIPHY","provider_url":"https://giphy.com","endpoints":[{"schemes":["https://giphy.com/gifs/*","http://gph.is/*","https://media.giphy.com/media/*/giphy.gif"],"url":"https://giphy.com/services/oembed","discovery":true}]},{"provider_name":"GloriaTV","provider_url":"https://gloria.tv/","endpoints":[{"url":"https://gloria.tv/oembed/","discovery":true}]},{"provider_name":"Gyazo","provider_url":"https://gyazo.com","endpoints":[{"schemes":["https://gyazo.com/*"],"url":"https://api.gyazo.com/api/oembed","formats":["json"]}]},{"provider_name":"HuffDuffer","provider_url":"http://huffduffer.com","endpoints":[{"schemes":["http://huffduffer.com/*/*"],"url":"http://huffduffer.com/oembed"}]},{"provider_name":"Hulu","provider_url":"http://www.hulu.com/","endpoints":[{"schemes":["http://www.hulu.com/watch/*"],"url":"http://www.hulu.com/api/oembed.{format}"}]},{"provider_name":"iFixit","provider_url":"http://www.iFixit.com","endpoints":[{"schemes":["http://www.ifixit.com/Guide/View/*"],"url":"http://www.ifixit.com/Embed"}]},{"provider_name":"IFTTT","provider_url":"http://www.ifttt.com/","endpoints":[{"schemes":["http://ifttt.com/recipes/*"],"url":"http://www.ifttt.com/oembed/","discovery":true}]},{"provider_name":"Indaco","provider_url":"https://player.indacolive.com/","endpoints":[{"schemes":["https://player.indacolive.com/player/jwp/clients/*"],"url":"https://player.indacolive.com/services/oembed","formats":["json"]}]},{"provider_name":"Infogram","provider_url":"https://infogr.am/","endpoints":[{"schemes":["https://infogr.am/*"],"url":"https://infogr.am/oembed"}]},{"provider_name":"Infoveave","provider_url":"https://infoveave.net/","endpoints":[{"schemes":["https://*.infoveave.net/E/*","https://*.infoveave.net/P/*"],"url":"https://infoveave.net/services/oembed/","discovery":true}]},{"provider_name":"Inoreader","provider_url":"https://www.inoreader.com","endpoints":[{"schemes":["https://www.inoreader.com/oembed/"],"url":"https://www.inoreader.com/oembed/api/","discovery":true}]},{"provider_name":"inphood","provider_url":"http://inphood.com/","endpoints":[{"schemes":["http://*.inphood.com/*"],"url":"http://api.inphood.com/oembed","formats":["json"]}]},{"provider_name":"Instagram","provider_url":"https://instagram.com","endpoints":[{"schemes":["http://instagram.com/p/*","http://instagr.am/p/*","http://www.instagram.com/p/*","http://www.instagr.am/p/*","https://instagram.com/p/*","https://instagr.am/p/*","https://www.instagram.com/p/*","https://www.instagr.am/p/*"],"url":"https://api.instagram.com/oembed","formats":["json"]}]},{"provider_name":"iSnare Articles","provider_url":"https://www.isnare.com/","endpoints":[{"schemes":["https://www.isnare.com/*"],"url":"https://www.isnare.com/oembed/"}]},{"provider_name":"ivlismusic","provider_url":"https://music.ivlis.kr/","endpoints":[{"url":"https://music.ivlis.kr/oembed","discovery":true}]},{"provider_name":"Kickstarter","provider_url":"http://www.kickstarter.com","endpoints":[{"schemes":["http://www.kickstarter.com/projects/*"],"url":"http://www.kickstarter.com/services/oembed"}]},{"provider_name":"Kidoju","provider_url":"https://www.kidoju.com/","endpoints":[{"schemes":["https://www.kidoju.com/en/x/*/*","https://www.kidoju.com/fr/x/*/*"],"url":"https://www.kidoju.com/api/oembed"}]},{"provider_name":"Kit","provider_url":"https://kit.com/","endpoints":[{"schemes":["http://kit.com/*/*","https://kit.com/*/*"],"url":"https://embed.kit.com/oembed","discovery":true}]},{"provider_name":"Kitchenbowl","provider_url":"http://www.kitchenbowl.com","endpoints":[{"schemes":["http://www.kitchenbowl.com/recipe/*"],"url":"http://www.kitchenbowl.com/oembed","discovery":true}]},{"provider_name":"Knacki","provider_url":"http://jdr.knacki.info","endpoints":[{"schemes":["http://jdr.knacki.info/meuh/*","https://jdr.knacki.info/meuh/*"],"url":"https://jdr.knacki.info/oembed"}]},{"provider_name":"LearningApps.org","provider_url":"http://learningapps.org/","endpoints":[{"schemes":["http://learningapps.org/*"],"url":"http://learningapps.org/oembed.php","discovery":true}]},{"provider_name":"Ludus","provider_url":"https://ludus.one","endpoints":[{"schemes":["https://app.ludus.one/*"],"url":"https://app.ludus.one/oembed","discovery":true,"formats":["json"]}]},{"provider_name":"MathEmbed","provider_url":"http://mathembed.com","endpoints":[{"schemes":["http://mathembed.com/latex?inputText=*","http://mathembed.com/latex?inputText=*"],"url":"http://mathembed.com/oembed"}]},{"provider_name":"me.me","provider_url":"https://me.me/","endpoints":[{"schemes":["https://me.me/i/*"],"url":"https://me.me/oembed","discovery":true}]},{"provider_name":"Meetup","provider_url":"http://www.meetup.com","endpoints":[{"schemes":["http://meetup.com/*","https://www.meetup.com/*","https://meetup.com/*","http://meetu.ps/*"],"url":"https://api.meetup.com/oembed","formats":["json"]}]},{"provider_name":"MixCloud","provider_url":"http://mixcloud.com/","endpoints":[{"schemes":["http://www.mixcloud.com/*/*/"],"url":"http://www.mixcloud.com/oembed/"}]},{"provider_name":"Moby Picture","provider_url":"http://www.mobypicture.com","endpoints":[{"schemes":["http://www.mobypicture.com/user/*/view/*","http://moby.to/*"],"url":"http://api.mobypicture.com/oEmbed"}]},{"provider_name":"Modelo","provider_url":"http://modelo.io/","endpoints":[{"schemes":["https://beta.modelo.io/embedded/*"],"url":"https://portal.modelo.io/oembed","discovery":false}]},{"provider_name":"MorphCast","provider_url":"https://www.morphcast.com","endpoints":[{"schemes":["https://m-roll.morphcast.com/mroll/*"],"url":"https://m-roll.morphcast.com/service/oembed","discovery":true,"formats":["json"]}]},{"provider_name":"myBeweeg","provider_url":"https://mybeweeg.com","endpoints":[{"schemes":["https://mybeweeg.com/w/*"],"url":"https://mybeweeg.com/services/oembed"}]},{"provider_name":"nanoo.tv","provider_url":"https://www.nanoo.tv/","endpoints":[{"schemes":["http://*.nanoo.tv/link/*","http://nanoo.tv/link/*","http://*.nanoo.pro/link/*","http://nanoo.pro/link/*","https://*.nanoo.tv/link/*","https://nanoo.tv/link/*","https://*.nanoo.pro/link/*","https://nanoo.pro/link/*"],"url":"https://www.nanoo.tv/services/oembed","discovery":true}]},{"provider_name":"Nasjonalbiblioteket","provider_url":"https://www.nb.no/","endpoints":[{"url":"https://api.nb.no/catalog/v1/oembed","discovery":true}]},{"provider_name":"nfb.ca","provider_url":"http://www.nfb.ca/","endpoints":[{"schemes":["http://*.nfb.ca/film/*"],"url":"http://www.nfb.ca/remote/services/oembed/","discovery":true}]},{"provider_name":"Odds.com.au","provider_url":"https://www.odds.com.au","endpoints":[{"schemes":["https://www.odds.com.au/*","https://odds.com.au/*"],"url":"https://www.odds.com.au/api/oembed/"}]},{"provider_name":"Official FM","provider_url":"http://official.fm","endpoints":[{"schemes":["http://official.fm/tracks/*","http://official.fm/playlists/*"],"url":"http://official.fm/services/oembed.{format}"}]},{"provider_name":"On Aol","provider_url":"http://on.aol.com/","endpoints":[{"schemes":["http://on.aol.com/video/*"],"url":"http://on.aol.com/api"}]},{"provider_name":"Ora TV","provider_url":"http://www.ora.tv/","endpoints":[{"discovery":true,"url":"https://www.ora.tv/oembed/*?format={format}"}]},{"provider_name":"Orbitvu","provider_url":"https://orbitvu.co","endpoints":[{"schemes":["https://orbitvu.co/001/*/ov3601/view","https://orbitvu.co/001/*/ov3601/*/view","https://orbitvu.co/001/*/ov3602/*/view","https://orbitvu.co/001/*/2/orbittour/*/view","https://orbitvu.co/001/*/1/2/orbittour/*/view","http://orbitvu.co/001/*/ov3601/view","http://orbitvu.co/001/*/ov3601/*/view","http://orbitvu.co/001/*/ov3602/*/view","http://orbitvu.co/001/*/2/orbittour/*/view","http://orbitvu.co/001/*/1/2/orbittour/*/view"],"url":"http://orbitvu.co/service/oembed","discovery":true}]},{"provider_name":"Oumy","provider_url":"https://www.oumy.com/","endpoints":[{"schemes":["https://www.oumy.com/v/*"],"url":"https://www.oumy.com/oembed","discovery":true}]},{"provider_name":"Pastery","provider_url":"https://www.pastery.net","endpoints":[{"schemes":["http://pastery.net/*","https://pastery.net/*","http://www.pastery.net/*","https://www.pastery.net/*"],"url":"https://www.pastery.net/oembed","discovery":true}]},{"provider_name":"PingVP","provider_url":"https://www.pingvp.com/","endpoints":[{"url":"https://beta.pingvp.com.kpnis.nl/p/oembed.php","discovery":true}]},{"provider_name":"Pixdor","provider_url":"http://www.pixdor.com/","endpoints":[{"schemes":["https://store.pixdor.com/place-marker-widget/*/show","https://store.pixdor.com/map/*/show"],"url":"https://store.pixdor.com/oembed","formats":["json","xml"],"discovery":true}]},{"provider_name":"Poll Daddy","provider_url":"http://polldaddy.com","endpoints":[{"schemes":["http://*.polldaddy.com/s/*","http://*.polldaddy.com/poll/*","http://*.polldaddy.com/ratings/*"],"url":"http://polldaddy.com/oembed/"}]},{"provider_name":"Port","provider_url":"http://www.sellwithport.com/","endpoints":[{"schemes":["https://app.sellwithport.com/#/buyer/*"],"url":"https://api.sellwithport.com/v1.0/buyer/oembed"}]},{"provider_name":"Portfolium","provider_url":"https://portfolium.com","endpoints":[{"schemes":["https://portfolium.com/entry/*"],"url":"https://api.portfolium.com/oembed"}]},{"provider_name":"Punters","provider_url":"https://www.punters.com.au","endpoints":[{"schemes":["https://www.punters.com.au/*","https://punters.com.au/*"],"url":"https://www.punters.com.au/api/oembed/"}]},{"provider_name":"Quiz.biz","provider_url":"http://www.quiz.biz/","endpoints":[{"schemes":["http://www.quiz.biz/quizz-*.html"],"url":"http://www.quiz.biz/api/oembed","discovery":true}]},{"provider_name":"Quizz.biz","provider_url":"http://www.quizz.biz/","endpoints":[{"schemes":["http://www.quizz.biz/quizz-*.html"],"url":"http://www.quizz.biz/api/oembed","discovery":true}]},{"provider_name":"RapidEngage","provider_url":"https://rapidengage.com","endpoints":[{"schemes":["https://rapidengage.com/s/*"],"url":"https://rapidengage.com/api/oembed"}]},{"provider_name":"Reddit","provider_url":"https://reddit.com/","endpoints":[{"schemes":["https://reddit.com/r/*/comments/*/*","https://www.reddit.com/r/*/comments/*/*"],"url":"https://www.reddit.com/oembed"}]},{"provider_name":"ReleaseWire","provider_url":"http://www.releasewire.com/","endpoints":[{"schemes":["http://rwire.com/*"],"url":"http://publisher.releasewire.com/oembed/","discovery":true}]},{"provider_name":"RepubHub","provider_url":"http://repubhub.icopyright.net/","endpoints":[{"schemes":["http://repubhub.icopyright.net/freePost.act?*"],"url":"http://repubhub.icopyright.net/oembed.act","discovery":true}]},{"provider_name":"ReverbNation","provider_url":"https://www.reverbnation.com/","endpoints":[{"schemes":["https://www.reverbnation.com/*","https://www.reverbnation.com/*/songs/*"],"url":"https://www.reverbnation.com/oembed","discovery":true}]},{"provider_name":"RiffReporter","provider_url":"https://www.riffreporter.de/","endpoints":[{"url":"https://www.riffreporter.de/service/oembed","discovery":true}]},{"provider_name":"Roomshare","provider_url":"http://roomshare.jp","endpoints":[{"schemes":["http://roomshare.jp/post/*","http://roomshare.jp/en/post/*"],"url":"http://roomshare.jp/en/oembed.{format}"}]},{"provider_name":"RoosterTeeth","provider_url":"https://roosterteeth.com","endpoints":[{"schemes":["https://roosterteeth.com/*"],"url":"https://roosterteeth.com/oembed","formats":["json"],"discovery":true}]},{"provider_name":"Rumble","provider_url":"https://rumble.com/","endpoints":[{"url":"https://rumble.com/api/Media/oembed.{format}","discovery":true}]},{"provider_name":"Sapo Videos","provider_url":"http://videos.sapo.pt","endpoints":[{"schemes":["http://videos.sapo.pt/*"],"url":"http://videos.sapo.pt/oembed"}]},{"provider_name":"Screen9","provider_url":"http://www.screen9.com/","endpoints":[{"schemes":["https://console.screen9.com/*","https://*.screen9.tv/*"],"url":"https://api.screen9.com/oembed"}]},{"provider_name":"Screencast.com","provider_url":"http://www.screencast.com/","endpoints":[{"url":"https://api.screencast.com/external/oembed","discovery":true}]},{"provider_name":"Screenr","provider_url":"http://www.screenr.com/","endpoints":[{"schemes":["http://www.screenr.com/*/"],"url":"http://www.screenr.com/api/oembed.{format}"}]},{"provider_name":"ScribbleMaps","provider_url":"https://scribblemaps.com","endpoints":[{"schemes":["http://www.scribblemaps.com/maps/view/*","https://www.scribblemaps.com/maps/view/*","http://scribblemaps.com/maps/view/*","https://scribblemaps.com/maps/view/*"],"url":"https://scribblemaps.com/api/services/oembed.{format}","discovery":true}]},{"provider_name":"Scribd","provider_url":"http://www.scribd.com/","endpoints":[{"schemes":["http://www.scribd.com/doc/*"],"url":"http://www.scribd.com/services/oembed/"}]},{"provider_name":"ShortNote","provider_url":"https://www.shortnote.jp/","endpoints":[{"schemes":["https://www.shortnote.jp/view/notes/*"],"url":"https://www.shortnote.jp/oembed/","discovery":true}]},{"provider_name":"Shoudio","provider_url":"http://shoudio.com","endpoints":[{"schemes":["http://shoudio.com/*","http://shoud.io/*"],"url":"http://shoudio.com/api/oembed"}]},{"provider_name":"Show the Way, actionable location info","provider_url":"https://showtheway.io","endpoints":[{"schemes":["https://showtheway.io/to/*"],"url":"https://showtheway.io/oembed","discovery":true}]},{"provider_name":"Simplecast","provider_url":"https://simplecast.com","endpoints":[{"schemes":["https://simplecast.com/s/*"],"url":"https://simplecast.com/oembed","formats":["json"]}]},{"provider_name":"Sizzle","provider_url":"https://onsizzle.com/","endpoints":[{"schemes":["https://onsizzle.com/i/*"],"url":"https://onsizzle.com/oembed","discovery":true}]},{"provider_name":"Sketchfab","provider_url":"http://sketchfab.com","endpoints":[{"schemes":["http://sketchfab.com/models/*","https://sketchfab.com/models/*","https://sketchfab.com/*/folders/*"],"url":"http://sketchfab.com/oembed","formats":["json"]}]},{"provider_name":"SlideShare","provider_url":"http://www.slideshare.net/","endpoints":[{"schemes":["http://www.slideshare.net/*/*","http://fr.slideshare.net/*/*","http://de.slideshare.net/*/*","http://es.slideshare.net/*/*","http://pt.slideshare.net/*/*"],"url":"http://www.slideshare.net/api/oembed/2","discovery":true}]},{"provider_name":"SmugMug","provider_url":"http://www.smugmug.com/","endpoints":[{"schemes":["http://*.smugmug.com/*"],"url":"http://api.smugmug.com/services/oembed/","discovery":true}]},{"provider_name":"SocialExplorer","provider_url":"https://www.socialexplorer.com/","endpoints":[{"schemes":["https://www.socialexplorer.com/*/explore","https://www.socialexplorer.com/*/view","https://www.socialexplorer.com/*/edit","https://www.socialexplorer.com/*/embed"],"url":"https://www.socialexplorer.com/services/oembed/","discovery":true}]},{"provider_name":"Songlink","provider_url":"https://song.link","endpoints":[{"schemes":["https://song.link/*"],"url":"https://song.link/oembed","formats":["json"],"discovery":true}]},{"provider_name":"SoundCloud","provider_url":"http://soundcloud.com/","endpoints":[{"schemes":["http://soundcloud.com/*","https://soundcloud.com/*"],"url":"https://soundcloud.com/oembed"}]},{"provider_name":"Soundsgood","provider_url":"https://soundsgood.co","endpoints":[{"schemes":["https://play.soundsgood.co/playlist/*","https://soundsgood.co/playlist/*"],"url":"https://play.soundsgood.co/oembed","discovery":true,"formats":["json","xml"]}]},{"provider_name":"SpeakerDeck","provider_url":"https://speakerdeck.com","endpoints":[{"schemes":["http://speakerdeck.com/*/*","https://speakerdeck.com/*/*"],"url":"https://speakerdeck.com/oembed.json","discovery":true,"formats":["json"]}]},{"provider_name":"Spotful","provider_url":"https://bespotful.com","endpoints":[{"schemes":["http://play.bespotful.com/*"],"url":"https://api.bespotful.com/oembed","discovery":true}]},{"provider_name":"Spotify","provider_url":"https://spotify.com/","endpoints":[{"schemes":["https://*.spotify.com/*","spotify:*"],"url":"https://embed.spotify.com/oembed/"}]},{"provider_name":"Spreaker","provider_url":"https://www.spreaker.com/","endpoints":[{"schemes":["http://*.spreaker.com/*","https://*.spreaker.com/*"],"url":"https://api.spreaker.com/oembed","discovery":true}]},{"provider_name":"Streamable","provider_url":"https://streamable.com/","endpoints":[{"schemes":["http://streamable.com/*","https://streamable.com/*"],"url":"https://api.streamable.com/oembed.json","discovery":true}]},{"provider_name":"StreamOneCloud","provider_url":"https://www.streamone.nl","endpoints":[{"schemes":["https://content.streamonecloud.net/embed/*"],"url":"https://content.streamonecloud.net/oembed","discovery":true}]},{"provider_name":"Sutori","provider_url":"https://www.sutori.com/","endpoints":[{"schemes":["https://www.sutori.com/story/*"],"url":"https://www.sutori.com/api/oembed","discovery":true,"formats":["json"]}]},{"provider_name":"Sway","provider_url":"https://www.sway.com","endpoints":[{"schemes":["https://sway.com/*","https://www.sway.com/*"],"url":"https://sway.com/api/v1.0/oembed","discovery":true}]},{"provider_name":"Ted","provider_url":"http://ted.com","endpoints":[{"schemes":["http://ted.com/talks/*"],"url":"http://www.ted.com/talks/oembed.{format}"}]},{"provider_name":"The New York Times","provider_url":"https://www.nytimes.com","endpoints":[{"schemes":["https://www.nytimes.com/svc/oembed","https://nytimes.com/*","https://*.nytimes.com/*"],"url":"https://www.nytimes.com/svc/oembed/json/","discovery":true}]},{"provider_name":"They Said So","provider_url":"https://theysaidso.com/","endpoints":[{"schemes":["https://theysaidso.com/image/*"],"url":"https://theysaidso.com/extensions/oembed/","discovery":true}]},{"provider_name":"TickCounter","provider_url":"https://www.tickcounter.com","endpoints":[{"schemes":["http://www.tickcounter.com/countdown/*","http://www.tickcounter.com/countup/*","http://www.tickcounter.com/ticker/*","http://www.tickcounter.com/worldclock/*","https://www.tickcounter.com/countdown/*","https://www.tickcounter.com/countup/*","https://www.tickcounter.com/ticker/*","https://www.tickcounter.com/worldclock/*"],"url":"https://www.tickcounter.com/oembed","discovery":true}]},{"provider_name":"Toornament","provider_url":"https://www.toornament.com/","endpoints":[{"schemes":["https://www.toornament.com/tournaments/*/information","https://www.toornament.com/tournaments/*/registration/","https://www.toornament.com/tournaments/*/matches/schedule","https://www.toornament.com/tournaments/*/stages/*/"],"url":"https://widget.toornament.com/oembed","discovery":true,"formats":["json","xml"]}]},{"provider_name":"Topy","provider_url":"http://www.topy.se/","endpoints":[{"schemes":["http://www.topy.se/image/*"],"url":"http://www.topy.se/oembed/","discovery":true}]},{"provider_name":"Twitch","provider_url":"https://www.twitch.tv","endpoints":[{"schemes":["http://clips.twitch.tv/*","https://clips.twitch.tv/*","http://www.twitch.tv/*","https://www.twitch.tv/*","http://twitch.tv/*","https://twitch.tv/*"],"url":"https://api.twitch.tv/v4/oembed","formats":["json"]}]},{"provider_name":"Twitter","provider_url":"http://www.twitter.com/","endpoints":[{"schemes":["https://twitter.com/*/status/*","https://*.twitter.com/*/status/*"],"url":"https://publish.twitter.com/oembed"}]},{"provider_name":"Ubideo","provider_url":"https://player.ubideo.com/","endpoints":[{"schemes":["https://player.ubideo.com/*"],"url":"https://player.ubideo.com/api/oembed.json","formats":["json"]}]},{"provider_name":"UOL","provider_url":"https://mais.uol.com.br/","endpoints":[{"schemes":["https://*.uol.com.br/view/*","https://*.uol.com.br/video/*"],"url":"https://mais.uol.com.br/apiuol/v3/oembed/view","discovery":true}]},{"provider_name":"Ustream","provider_url":"http://www.ustream.tv","endpoints":[{"schemes":["http://*.ustream.tv/*","http://*.ustream.com/*"],"url":"http://www.ustream.tv/oembed","formats":["json"]}]},{"provider_name":"Utposts","provider_url":"https://www.utposts.com/","endpoints":[{"schemes":["https://www.utposts.com/products/*","http://www.utposts.com/products/*","https://utposts.com/products/*","http://utposts.com/products/*"],"url":"https://www.utposts.com/api/oembed","formats":["json"]}]},{"provider_name":"Uttles","provider_url":"http://uttles.com","endpoints":[{"schemes":["http://uttles.com/uttle/*"],"url":"http://uttles.com/api/reply/oembed","discovery":true}]},{"provider_name":"VeeR VR","provider_url":"http://veer.tv/","endpoints":[{"schemes":["http://veer.tv/videos/*"],"url":"https://api.veer.tv/oembed","discovery":true},{"schemes":["http://veervr.tv/videos/*"],"url":"https://api.veervr.tv/oembed","discovery":true}]},{"provider_name":"Verse","provider_url":"http://verse.com/","endpoints":[{"url":"http://verse.com/services/oembed/"}]},{"provider_name":"VEVO","provider_url":"http://www.vevo.com/","endpoints":[{"schemes":["http://www.vevo.com/*","https://www.vevo.com/*"],"url":"https://www.vevo.com/oembed","discovery":false}]},{"provider_name":"VideoJug","provider_url":"http://www.videojug.com","endpoints":[{"schemes":["http://www.videojug.com/film/*","http://www.videojug.com/interview/*"],"url":"http://www.videojug.com/oembed.{format}"}]},{"provider_name":"Vidlit","provider_url":"https://vidl.it/","endpoints":[{"schemes":["https://vidl.it/*"],"url":"https://api.vidl.it/oembed","discovery":true}]},{"provider_name":"Vidmizer","provider_url":"https://www.vidmizer.com/","endpoints":[{"schemes":["https://players.vidmizer.com/*"],"url":"https://app-v2.vidmizer.com/api/oembed","discovery":true}]},{"provider_name":"Vimeo","provider_url":"https://vimeo.com/","endpoints":[{"schemes":["https://vimeo.com/*","https://vimeo.com/album/*/video/*","https://vimeo.com/channels/*/*","https://vimeo.com/groups/*/videos/*","https://vimeo.com/ondemand/*/*","https://player.vimeo.com/video/*"],"url":"https://vimeo.com/api/oembed.{format}","discovery":true}]},{"provider_name":"Vlipsy","provider_url":"https://vlipsy.com/","endpoints":[{"schemes":["https://vlipsy.com/*"],"url":"https://vlipsy.com/oembed","discovery":true}]},{"provider_name":"wecandeo","provider_url":"http://www.wecandeo.com/","endpoints":[{"url":"http://play.wecandeo.com/oembed","discovery":true}]},{"provider_name":"Wiredrive","provider_url":"https://www.wiredrive.com/","endpoints":[{"schemes":["https://*.wiredrive.com/*"],"url":"http://*.wiredrive.com/present-oembed/","formats":["json"],"discovery":true}]},{"provider_name":"wizer.me","provider_url":"http://www.wizer.me/","endpoints":[{"schemes":["http://*.wizer.me/learn/*","https://*.wizer.me/learn/*","http://*.wizer.me/preview/*","https://*.wizer.me/preview/*"],"url":"http://app.wizer.me/api/oembed.{format}","discovery":true}]},{"provider_name":"Wootled","provider_url":"http://www.wootled.com/","endpoints":[{"url":"http://www.wootled.com/oembed"}]},{"provider_name":"WordPress.com","provider_url":"http://wordpress.com/","endpoints":[{"url":"http://public-api.wordpress.com/oembed/","discovery":true}]},{"provider_name":"Yes, I Know IT!","provider_url":"http://yesik.it","endpoints":[{"schemes":["http://yesik.it/*","http://www.yesik.it/*"],"url":"http://yesik.it/s/oembed","formats":["json"],"discovery":true}]},{"provider_name":"YFrog","provider_url":"http://yfrog.com/","endpoints":[{"schemes":["http://*.yfrog.com/*","http://yfrog.us/*"],"url":"http://www.yfrog.com/api/oembed","formats":["json"]}]},{"provider_name":"YouTube","provider_url":"https://www.youtube.com/","endpoints":[{"url":"https://www.youtube.com/oembed","discovery":true}]},{"provider_name":"ZnipeTV","provider_url":"https://www.znipe.tv/","endpoints":[{"schemes":["https://*.znipe.tv/*"],"url":"https://api.znipe.tv/v3/oembed/","discovery":true}]},{"provider_name":"ZProvider","provider_url":"https://reports.zoho.com/","endpoints":[{"schemes":["https://reports.zoho.com/ZDBDataSheetView.cc?OBJID=1432535000000003002&STANDALONE=true&INTERVAL=120&DATATYPESYMBOL=false&REMTOOLBAR=false&SEARCHBOX=true&INCLUDETITLE=true&INCLUDEDESC=true&SHOWHIDEOPT=true"],"url":"http://api.provider.com/oembed.json","discovery":true}]}];
+
+/***/ }),
+
+/***/ "./node_modules/oembed-providers/providers.json":
+/*!******************************************************!*\
+  !*** ./node_modules/oembed-providers/providers.json ***!
+  \******************************************************/
+/*! exports provided: 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, default */
+/***/ (function(module) {
+
+module.exports = [{"provider_name":"23HQ","provider_url":"http://www.23hq.com","endpoints":[{"schemes":["http://www.23hq.com/*/photo/*"],"url":"http://www.23hq.com/23/oembed"}]},{"provider_name":"Alpha App Net","provider_url":"https://alpha.app.net/browse/posts/","endpoints":[{"schemes":["https://alpha.app.net/*/post/*","https://photos.app.net/*/*"],"url":"https://alpha-api.app.net/oembed","formats":["json"]}]},{"provider_name":"amCharts Live Editor","provider_url":"http://live.amcharts.com/","endpoints":[{"schemes":["http://live.amcharts.com/*"],"url":"http://live.amcharts.com/oembed"}]},{"provider_name":"Animatron","provider_url":"https://www.animatron.com/","endpoints":[{"schemes":["https://www.animatron.com/project/*","https://animatron.com/project/*"],"url":"https://animatron.com/oembed/json","discovery":true}]},{"provider_name":"Animoto","provider_url":"http://animoto.com/","endpoints":[{"schemes":["http://animoto.com/play/*"],"url":"http://animoto.com/oembeds/create"}]},{"provider_name":"AudioSnaps","provider_url":"http://audiosnaps.com","endpoints":[{"schemes":["http://audiosnaps.com/k/*"],"url":"http://audiosnaps.com/service/oembed","discovery":true}]},{"provider_name":"Blackfire.io","provider_url":"https://blackfire.io","endpoints":[{"schemes":["https://blackfire.io/profiles/*/graph","https://blackfire.io/profiles/compare/*/graph"],"url":"https://blackfire.io/oembed","discovery":true}]},{"provider_name":"Box Office Buz","provider_url":"http://boxofficebuz.com","endpoints":[{"url":"http://boxofficebuz.com/oembed","discovery":true}]},{"provider_name":"Cacoo","provider_url":"https://cacoo.com","endpoints":[{"schemes":["https://cacoo.com/diagrams/*"],"url":"http://cacoo.com/oembed.{format}"}]},{"provider_name":"CatBoat","provider_url":"http://img.catbo.at/","endpoints":[{"schemes":["http://img.catbo.at/*"],"url":"http://img.catbo.at/oembed.json","formats":["json"]}]},{"provider_name":"ChartBlocks","provider_url":"http://www.chartblocks.com/","endpoints":[{"schemes":["http://public.chartblocks.com/c/*"],"url":"http://embed.chartblocks.com/1.0/oembed"}]},{"provider_name":"chirbit.com","provider_url":"http://www.chirbit.com/","endpoints":[{"schemes":["http://chirb.it/*"],"url":"http://chirb.it/oembed.{format}","discovery":true}]},{"provider_name":"CircuitLab","provider_url":"https://www.circuitlab.com/","endpoints":[{"schemes":["https://www.circuitlab.com/circuit/*"],"url":"https://www.circuitlab.com/circuit/oembed/","discovery":true}]},{"provider_name":"Clipland","provider_url":"http://www.clipland.com/","endpoints":[{"schemes":["http://www.clipland.com/v/*","https://www.clipland.com/v/*"],"url":"https://www.clipland.com/api/oembed","discovery":true}]},{"provider_name":"Clyp","provider_url":"http://clyp.it/","endpoints":[{"schemes":["http://clyp.it/*","http://clyp.it/playlist/*"],"url":"http://api.clyp.it/oembed/","discovery":true}]},{"provider_name":"Codepen","provider_url":"https://codepen.io","endpoints":[{"schemes":["http://codepen.io/*","https://codepen.io/*"],"url":"http://codepen.io/api/oembed"}]},{"provider_name":"Codepoints","provider_url":"https://codepoints.net","endpoints":[{"schemes":["http://codepoints.net/*","https://codepoints.net/*","http://www.codepoints.net/*","https://www.codepoints.net/*"],"url":"https://codepoints.net/api/v1/oembed","discovery":true}]},{"provider_name":"CollegeHumor","provider_url":"http://www.collegehumor.com/","endpoints":[{"schemes":["http://www.collegehumor.com/video/*"],"url":"http://www.collegehumor.com/oembed.{format}","discovery":true}]},{"provider_name":"Coub","provider_url":"http://coub.com/","endpoints":[{"schemes":["http://coub.com/view/*","http://coub.com/embed/*"],"url":"http://coub.com/api/oembed.{format}"}]},{"provider_name":"Crowd Ranking","provider_url":"http://crowdranking.com","endpoints":[{"schemes":["http://crowdranking.com/*/*"],"url":"http://crowdranking.com/api/oembed.{format}"}]},{"provider_name":"Daily Mile","provider_url":"http://www.dailymile.com","endpoints":[{"schemes":["http://www.dailymile.com/people/*/entries/*"],"url":"http://api.dailymile.com/oembed?format=json","formats":["json"]}]},{"provider_name":"Dailymotion","provider_url":"http://www.dailymotion.com","endpoints":[{"schemes":["http://www.dailymotion.com/video/*"],"url":"http://www.dailymotion.com/services/oembed","discovery":true}]},{"provider_name":"Deviantart.com","provider_url":"http://www.deviantart.com","endpoints":[{"schemes":["http://*.deviantart.com/art/*","http://*.deviantart.com/*#/d*","http://fav.me/*","http://sta.sh/*"],"url":"http://backend.deviantart.com/oembed"}]},{"provider_name":"Didacte","provider_url":"https://www.didacte.com/","endpoints":[{"schemes":["https://*.didacte.com/a/course/*"],"url":"https://*.didacte.com/cards/oembed'","discovery":true,"formats":["json"]}]},{"provider_name":"Dipity","provider_url":"http://www.dipity.com","endpoints":[{"schemes":["http://www.dipity.com/*/*/"],"url":"http://www.dipity.com/oembed/timeline/"}]},{"provider_name":"Docs","provider_url":"https://www.docs.com","endpoints":[{"schemes":["https://docs.com/*","https://www.docs.com/*"],"url":"https://docs.com/api/oembed","discovery":true}]},{"provider_name":"Dotsub","provider_url":"http://dotsub.com/","endpoints":[{"schemes":["http://dotsub.com/view/*"],"url":"http://dotsub.com/services/oembed"}]},{"provider_name":"edocr","provider_url":"http://www.edocr.com","endpoints":[{"schemes":["http://edocr.com/docs/*"],"url":"http://edocr.com/api/oembed"}]},{"provider_name":"eduMedia","provider_url":"https://www.edumedia-sciences.com/","endpoints":[{"url":"https://www.edumedia-sciences.com/oembed.json","discovery":true},{"url":"https://www.edumedia-sciences.com/oembed.xml","discovery":true}]},{"provider_name":"EgliseInfo","provider_url":"http://egliseinfo.catholique.fr/","endpoints":[{"schemes":["http://egliseinfo.catholique.fr/*"],"url":"http://egliseinfo.catholique.fr/api/oembed","discovery":true}]},{"provider_name":"Embed Articles","provider_url":"http://embedarticles.com/","endpoints":[{"schemes":["http://embedarticles.com/*"],"url":"http://embedarticles.com/oembed/"}]},{"provider_name":"Embedly","provider_url":"http://api.embed.ly/","endpoints":[{"url":"http://api.embed.ly/1/oembed"}]},{"provider_name":"Eyrie","provider_url":"https://eyrie.io/","endpoints":[{"schemes":["https://eyrie.io/board/*","https://eyrie.io/sparkfun/*"],"url":"https://eyrie.io/v1/oembed","discovery":true}]},{"provider_name":"Facebook (Video)","provider_url":"https://www.facebook.com/","endpoints":[{"schemes":["https://www.facebook.com/*/videos/*","https://www.facebook.com/video.php"],"url":"https://www.facebook.com/plugins/video/oembed.json","discovery":true}]},{"provider_name":"Flat","provider_url":"https://flat.io","endpoints":[{"schemes":["https://flat.io/score/*","https://*.flat.io/score/*"],"url":"https://flat.io/services/oembed","discovery":true}]},{"provider_name":"Flickr","provider_url":"http://www.flickr.com/","endpoints":[{"schemes":["http://*.flickr.com/photos/*","http://flic.kr/p/*"],"url":"http://www.flickr.com/services/oembed/","discovery":true}]},{"provider_name":"FOX SPORTS Australia","provider_url":"http://www.foxsports.com.au","endpoints":[{"schemes":["http://fiso.foxsports.com.au/isomorphic-widget/*","https://fiso.foxsports.com.au/isomorphic-widget/*"],"url":"https://fiso.foxsports.com.au/oembed"}]},{"provider_name":"FrameBuzz","provider_url":"https://framebuzz.com/","endpoints":[{"schemes":["http://framebuzz.com/v/*","https://framebuzz.com/v/*"],"url":"https://framebuzz.com/oembed/","discovery":true}]},{"provider_name":"FunnyOrDie","provider_url":"http://www.funnyordie.com/","endpoints":[{"schemes":["http://www.funnyordie.com/videos/*"],"url":"http://www.funnyordie.com/oembed.{format}"}]},{"provider_name":"Geograph Britain and Ireland","provider_url":"https://www.geograph.org.uk/","endpoints":[{"schemes":["http://*.geograph.org.uk/*","http://*.geograph.co.uk/*","http://*.geograph.ie/*","http://*.wikimedia.org/*_geograph.org.uk_*"],"url":"http://api.geograph.org.uk/api/oembed"}]},{"provider_name":"Geograph Channel Islands","provider_url":"http://channel-islands.geograph.org/","endpoints":[{"schemes":["http://*.geograph.org.gg/*","http://*.geograph.org.je/*","http://channel-islands.geograph.org/*","http://channel-islands.geographs.org/*","http://*.channel.geographs.org/*"],"url":"http://www.geograph.org.gg/api/oembed"}]},{"provider_name":"Geograph Germany","provider_url":"http://geo-en.hlipp.de/","endpoints":[{"schemes":["http://geo-en.hlipp.de/*","http://geo.hlipp.de/*","http://germany.geograph.org/*"],"url":"http://geo.hlipp.de/restapi.php/api/oembed"}]},{"provider_name":"Getty Images","provider_url":"http://www.gettyimages.com/","endpoints":[{"schemes":["http://gty.im/*"],"url":"http://embed.gettyimages.com/oembed","formats":["json"]}]},{"provider_name":"Gfycat","provider_url":"https://gfycat.com/","endpoints":[{"schemes":["http://gfycat.com/*","http://www.gfycat.com/*","https://gfycat.com/*","https://www.gfycat.com/*"],"url":"https://api.gfycat.com/v1/oembed","discovery":true}]},{"provider_name":"GIPHY","provider_url":"https://giphy.com","endpoints":[{"schemes":["http://giphy.com/*","https://giphy.com/*"],"url":"http://giphy.com/services/oembed","discovery":true}]},{"provider_name":"Gyazo","provider_url":"https://gyazo.com","endpoints":[{"schemes":["https://gyazo.com/*"],"url":"https://api.gyazo.com/api/oembed","formats":["json"]}]},{"provider_name":"HuffDuffer","provider_url":"http://huffduffer.com","endpoints":[{"schemes":["http://huffduffer.com/*/*"],"url":"http://huffduffer.com/oembed"}]},{"provider_name":"Hulu","provider_url":"http://www.hulu.com/","endpoints":[{"schemes":["http://www.hulu.com/watch/*"],"url":"http://www.hulu.com/api/oembed.{format}"}]},{"provider_name":"iFixit","provider_url":"http://www.iFixit.com","endpoints":[{"schemes":["http://www.ifixit.com/Guide/View/*"],"url":"http://www.ifixit.com/Embed"}]},{"provider_name":"IFTTT","provider_url":"http://www.ifttt.com/","endpoints":[{"schemes":["http://ifttt.com/recipes/*"],"url":"http://www.ifttt.com/oembed/","discovery":true}]},{"provider_name":"Indaco","provider_url":"https://player.indacolive.com/","endpoints":[{"schemes":["https://player.indacolive.com/player/jwp/clients/*"],"url":"https://player.indacolive.com/services/oembed","formats":["json"]}]},{"provider_name":"Infogram","provider_url":"https://infogr.am/","endpoints":[{"schemes":["https://infogr.am/*"],"url":"https://infogr.am/oembed"}]},{"provider_name":"Inoreader","provider_url":"https://www.inoreader.com","endpoints":[{"schemes":["https://www.inoreader.com/oembed/"],"url":"https://www.inoreader.com/oembed/api/","discovery":true}]},{"provider_name":"inphood","provider_url":"http://inphood.com/","endpoints":[{"schemes":["http://*.inphood.com/*"],"url":"http://api.inphood.com/oembed","formats":["json"]}]},{"provider_name":"Instagram","provider_url":"https://instagram.com","endpoints":[{"schemes":["http://instagram.com/p/*","http://instagr.am/p/*","https://instagram.com/p/*","https://instagr.am/p/*"],"url":"http://api.instagram.com/oembed","formats":["json"]}]},{"provider_name":"iSnare Articles","provider_url":"https://www.isnare.com/","endpoints":[{"schemes":["https://www.isnare.com/*"],"url":"https://www.isnare.com/oembed/"}]},{"provider_name":"Kickstarter","provider_url":"http://www.kickstarter.com","endpoints":[{"schemes":["http://www.kickstarter.com/projects/*"],"url":"http://www.kickstarter.com/services/oembed"}]},{"provider_name":"Kidoju","provider_url":"https://www.kidoju.com/","endpoints":[{"schemes":["https://www.kidoju.com/en/x/*/*","https://www.kidoju.com/fr/x/*/*"],"url":"https://www.kidoju.com/api/oembed"}]},{"provider_name":"Kit","provider_url":"https://kit.com/","endpoints":[{"schemes":["http://kit.com/*/*","https://kit.com/*/*"],"url":"https://embed.kit.com/oembed","discovery":true}]},{"provider_name":"Kitchenbowl","provider_url":"http://www.kitchenbowl.com","endpoints":[{"schemes":["http://www.kitchenbowl.com/recipe/*"],"url":"http://www.kitchenbowl.com/oembed","discovery":true}]},{"provider_name":"Knacki","provider_url":"http://jdr.knacki.info","endpoints":[{"schemes":["http://jdr.knacki.info/meuh/*","https://jdr.knacki.info/meuh/*"],"url":"https://jdr.knacki.info/oembed"}]},{"provider_name":"LearningApps.org","provider_url":"http://learningapps.org/","endpoints":[{"schemes":["http://learningapps.org/*"],"url":"http://learningapps.org/oembed.php","discovery":true}]},{"provider_name":"MathEmbed","provider_url":"http://mathembed.com","endpoints":[{"schemes":["http://mathembed.com/latex?inputText=*","http://mathembed.com/latex?inputText=*"],"url":"http://mathembed.com/oembed"}]},{"provider_name":"Meetup","provider_url":"http://www.meetup.com","endpoints":[{"schemes":["http://meetup.com/*","http://meetu.ps/*"],"url":"https://api.meetup.com/oembed","formats":["json"]}]},{"provider_name":"MixCloud","provider_url":"http://mixcloud.com/","endpoints":[{"schemes":["http://www.mixcloud.com/*/*/"],"url":"http://www.mixcloud.com/oembed/"}]},{"provider_name":"Moby Picture","provider_url":"http://www.mobypicture.com","endpoints":[{"schemes":["http://www.mobypicture.com/user/*/view/*","http://moby.to/*"],"url":"http://api.mobypicture.com/oEmbed"}]},{"provider_name":"Modelo","provider_url":"http://modelo.io/","endpoints":[{"schemes":["https://beta.modelo.io/embedded/*"],"url":"https://portal.modelo.io/oembed","discovery":false}]},{"provider_name":"myBeweeg","provider_url":"https://mybeweeg.com","endpoints":[{"schemes":["https://mybeweeg.com/w/*"],"url":"https://mybeweeg.com/services/oembed"}]},{"provider_name":"nfb.ca","provider_url":"http://www.nfb.ca/","endpoints":[{"schemes":["http://*.nfb.ca/film/*"],"url":"http://www.nfb.ca/remote/services/oembed/","discovery":true}]},{"provider_name":"Odds.com.au","provider_url":"https://www.odds.com.au","endpoints":[{"schemes":["https://www.odds.com.au/*","https://odds.com.au/*"],"url":"https://www.odds.com.au/api/oembed/"}]},{"provider_name":"Office Mix","provider_url":"http://mix.office.com/","endpoints":[{"schemes":["https://mix.office.com/watch/*","https://mix.office.com/embed/*"],"url":"https://mix.office.com/oembed","discovery":true}]},{"provider_name":"Official FM","provider_url":"http://official.fm","endpoints":[{"schemes":["http://official.fm/tracks/*","http://official.fm/playlists/*"],"url":"http://official.fm/services/oembed.{format}"}]},{"provider_name":"On Aol","provider_url":"http://on.aol.com/","endpoints":[{"schemes":["http://on.aol.com/video/*"],"url":"http://on.aol.com/api"}]},{"provider_name":"Ora TV","provider_url":"http://www.ora.tv/","endpoints":[{"discovery":true,"url":"https://www.ora.tv/oembed/*?format={format}"}]},{"provider_name":"Orbitvu","provider_url":"https://orbitvu.co","endpoints":[{"schemes":["https://orbitvu.co/001/*/ov3601/view","https://orbitvu.co/001/*/ov3601/*/view","https://orbitvu.co/001/*/ov3602/*/view","https://orbitvu.co/001/*/2/orbittour/*/view","https://orbitvu.co/001/*/1/2/orbittour/*/view","http://orbitvu.co/001/*/ov3601/view","http://orbitvu.co/001/*/ov3601/*/view","http://orbitvu.co/001/*/ov3602/*/view","http://orbitvu.co/001/*/2/orbittour/*/view","http://orbitvu.co/001/*/1/2/orbittour/*/view"],"url":"http://orbitvu.co/service/oembed","discovery":true}]},{"provider_name":"Oumy","provider_url":"https://www.oumy.com/","endpoints":[{"schemes":["https://www.oumy.com/v/*"],"url":"https://www.oumy.com/oembed","discovery":true}]},{"provider_name":"Pastery","provider_url":"https://www.pastery.net","endpoints":[{"schemes":["http://pastery.net/*","https://pastery.net/*","http://www.pastery.net/*","https://www.pastery.net/*"],"url":"https://www.pastery.net/oembed","discovery":true}]},{"provider_name":"Pixdor","provider_url":"http://www.pixdor.com/","endpoints":[{"schemes":["https://store.pixdor.com/place-marker-widget/*/show","https://store.pixdor.com/map/*/show"],"url":"https://store.pixdor.com/oembed","formats":["json","xml"],"discovery":true}]},{"provider_name":"Poll Daddy","provider_url":"http://polldaddy.com","endpoints":[{"schemes":["http://*.polldaddy.com/s/*","http://*.polldaddy.com/poll/*","http://*.polldaddy.com/ratings/*"],"url":"http://polldaddy.com/oembed/"}]},{"provider_name":"Port","provider_url":"http://www.sellwithport.com/","endpoints":[{"schemes":["https://app.sellwithport.com/#/buyer/*"],"url":"https://api.sellwithport.com/v1.0/buyer/oembed"}]},{"provider_name":"Portfolium","provider_url":"https://portfolium.com","endpoints":[{"schemes":["https://portfolium.com/entry/*"],"url":"https://api.portfolium.com/oembed"}]},{"provider_name":"Punters","provider_url":"https://www.punters.com.au","endpoints":[{"schemes":["https://www.punters.com.au/*","https://punters.com.au/*"],"url":"https://www.punters.com.au/api/oembed/"}]},{"provider_name":"Quiz.biz","provider_url":"http://www.quiz.biz/","endpoints":[{"schemes":["http://www.quiz.biz/quizz-*.html"],"url":"http://www.quiz.biz/api/oembed","discovery":true}]},{"provider_name":"Quizz.biz","provider_url":"http://www.quizz.biz/","endpoints":[{"schemes":["http://www.quizz.biz/quizz-*.html"],"url":"http://www.quizz.biz/api/oembed","discovery":true}]},{"provider_name":"RapidEngage","provider_url":"https://rapidengage.com","endpoints":[{"schemes":["https://rapidengage.com/s/*"],"url":"https://rapidengage.com/api/oembed"}]},{"provider_name":"Reddit","provider_url":"https://reddit.com/","endpoints":[{"schemes":["https://reddit.com/r/*/comments/*/*"],"url":"https://www.reddit.com/oembed"}]},{"provider_name":"ReleaseWire","provider_url":"http://www.releasewire.com/","endpoints":[{"schemes":["http://rwire.com/*"],"url":"http://publisher.releasewire.com/oembed/","discovery":true}]},{"provider_name":"RepubHub","provider_url":"http://repubhub.icopyright.net/","endpoints":[{"schemes":["http://repubhub.icopyright.net/freePost.act?*"],"url":"http://repubhub.icopyright.net/oembed.act","discovery":true}]},{"provider_name":"ReverbNation","provider_url":"https://www.reverbnation.com/","endpoints":[{"schemes":["https://www.reverbnation.com/*","https://www.reverbnation.com/*/songs/*"],"url":"https://www.reverbnation.com/oembed","discovery":true}]},{"provider_name":"Roomshare","provider_url":"http://roomshare.jp","endpoints":[{"schemes":["http://roomshare.jp/post/*","http://roomshare.jp/en/post/*"],"url":"http://roomshare.jp/en/oembed.{format}"}]},{"provider_name":"Rumble","provider_url":"https://rumble.com/","endpoints":[{"url":"https://rumble.com/api/Media/oembed.{format}","discovery":true}]},{"provider_name":"Sapo Videos","provider_url":"http://videos.sapo.pt","endpoints":[{"schemes":["http://videos.sapo.pt/*"],"url":"http://videos.sapo.pt/oembed"}]},{"provider_name":"Screen9","provider_url":"http://www.screen9.com/","endpoints":[{"schemes":["https://console.screen9.com/*","https://*.screen9.tv/*"],"url":"https://api.screen9.com/oembed"}]},{"provider_name":"Screencast.com","provider_url":"http://www.screencast.com/","endpoints":[{"url":"https://api.screencast.com/external/oembed","discovery":true}]},{"provider_name":"Screenr","provider_url":"http://www.screenr.com/","endpoints":[{"schemes":["http://www.screenr.com/*/"],"url":"http://www.screenr.com/api/oembed.{format}"}]},{"provider_name":"ScribbleMaps","provider_url":"https://scribblemaps.com","endpoints":[{"schemes":["http://www.scribblemaps.com/maps/view/*","https://www.scribblemaps.com/maps/view/*","http://scribblemaps.com/maps/view/*","https://scribblemaps.com/maps/view/*"],"url":"https://scribblemaps.com/api/services/oembed.{format}","discovery":true}]},{"provider_name":"Scribd","provider_url":"http://www.scribd.com/","endpoints":[{"schemes":["http://www.scribd.com/doc/*"],"url":"http://www.scribd.com/services/oembed/"}]},{"provider_name":"ShortNote","provider_url":"https://www.shortnote.jp/","endpoints":[{"schemes":["https://www.shortnote.jp/view/notes/*"],"url":"https://www.shortnote.jp/oembed/","discovery":true}]},{"provider_name":"Shoudio","provider_url":"http://shoudio.com","endpoints":[{"schemes":["http://shoudio.com/*","http://shoud.io/*"],"url":"http://shoudio.com/api/oembed"}]},{"provider_name":"Show the Way, actionable location info","provider_url":"https://showtheway.io","endpoints":[{"schemes":["https://showtheway.io/to/*"],"url":"https://showtheway.io/oembed","discovery":true}]},{"provider_name":"Silk","provider_url":"http://www.silk.co/","endpoints":[{"schemes":["http://*.silk.co/explore/*","https://*.silk.co/explore/*","http://*.silk.co/s/embed/*","https://*.silk.co/s/embed/*"],"url":"http://www.silk.co/oembed/","discovery":true}]},{"provider_name":"Sizzle","provider_url":"https://onsizzle.com/","endpoints":[{"schemes":["https://onsizzle.com/i/*"],"url":"https://onsizzle.com/oembed","discovery":true}]},{"provider_name":"Sketchfab","provider_url":"http://sketchfab.com","endpoints":[{"schemes":["http://sketchfab.com/models/*","https://sketchfab.com/models/*","https://sketchfab.com/*/folders/*"],"url":"http://sketchfab.com/oembed","formats":["json"]}]},{"provider_name":"SlideShare","provider_url":"http://www.slideshare.net/","endpoints":[{"schemes":["http://www.slideshare.net/*/*","http://fr.slideshare.net/*/*","http://de.slideshare.net/*/*","http://es.slideshare.net/*/*","http://pt.slideshare.net/*/*"],"url":"http://www.slideshare.net/api/oembed/2","discovery":true}]},{"provider_name":"SmugMug","provider_url":"http://www.smugmug.com/","endpoints":[{"schemes":["http://*.smugmug.com/*"],"url":"http://api.smugmug.com/services/oembed/","discovery":true}]},{"provider_name":"SoundCloud","provider_url":"http://soundcloud.com/","endpoints":[{"schemes":["http://soundcloud.com/*"],"url":"https://soundcloud.com/oembed"}]},{"provider_name":"Soundsgood","provider_url":"https://soundsgood.co","endpoints":[{"schemes":["https://play.soundsgood.co/playlist/*","https://soundsgood.co/playlist/*"],"url":"https://play.soundsgood.co/oembed","discovery":true,"formats":["json","xml"]}]},{"provider_name":"SpeakerDeck","provider_url":"https://speakerdeck.com","endpoints":[{"schemes":["http://speakerdeck.com/*/*","https://speakerdeck.com/*/*"],"url":"https://speakerdeck.com/oembed.json","discovery":true,"formats":["json"]}]},{"provider_name":"Spreaker","provider_url":"https://www.spreaker.com/","endpoints":[{"schemes":["http://*.spreaker.com/*","https://*.spreaker.com/*"],"url":"https://api.spreaker.com/oembed","discovery":true}]},{"provider_name":"Streamable","provider_url":"https://streamable.com/","endpoints":[{"schemes":["http://streamable.com/*","https://streamable.com/*"],"url":"https://api.streamable.com/oembed.json","discovery":true}]},{"provider_name":"StreamOneCloud","provider_url":"https://www.streamone.nl","endpoints":[{"schemes":["https://content.streamonecloud.net/embed/*"],"url":"https://content.streamonecloud.net/oembed","discovery":true}]},{"provider_name":"Sway","provider_url":"https://www.sway.com","endpoints":[{"schemes":["https://sway.com/*","https://www.sway.com/*"],"url":"https://sway.com/api/v1.0/oembed","discovery":true}]},{"provider_name":"Ted","provider_url":"http://ted.com","endpoints":[{"schemes":["http://ted.com/talks/*"],"url":"http://www.ted.com/talks/oembed.{format}"}]},{"provider_name":"The New York Times","provider_url":"https://www.nytimes.com","endpoints":[{"schemes":["https://www.nytimes.com/svc/oembed","https://nytimes.com/*","https://*.nytimes.com/*"],"url":"https://www.nytimes.com/svc/oembed/json/","discovery":true}]},{"provider_name":"They Said So","provider_url":"https://theysaidso.com/","endpoints":[{"schemes":["https://theysaidso.com/image/*"],"url":"https://theysaidso.com/extensions/oembed/","discovery":true}]},{"provider_name":"TickCounter","provider_url":"https://www.tickcounter.com","endpoints":[{"schemes":["http://www.tickcounter.com/countdown/*","http://www.tickcounter.com/countup/*","http://www.tickcounter.com/ticker/*","http://www.tickcounter.com/worldclock/*","https://www.tickcounter.com/countdown/*","https://www.tickcounter.com/countup/*","https://www.tickcounter.com/ticker/*","https://www.tickcounter.com/worldclock/*"],"url":"https://www.tickcounter.com/oembed","discovery":true}]},{"provider_name":"Topy","provider_url":"http://www.topy.se/","endpoints":[{"schemes":["http://www.topy.se/image/*"],"url":"http://www.topy.se/oembed/","discovery":true}]},{"provider_name":"Twitch","provider_url":"https://www.twitch.tv","endpoints":[{"schemes":["http://clips.twitch.tv/*","https://clips.twitch.tv/*","http://www.twitch.tv/*","https://www.twitch.tv/*","http://twitch.tv/*","https://twitch.tv/*"],"url":"https://api.twitch.tv/v4/oembed","formats":["json"]}]},{"provider_name":"Twitter","provider_url":"http://www.twitter.com/","endpoints":[{"schemes":["https://twitter.com/*/status/*"],"url":"https://publish.twitter.com/oembed"}]},{"provider_name":"Ubideo","provider_url":"https://player.ubideo.com/","endpoints":[{"schemes":["https://player.ubideo.com/*"],"url":"https://player.ubideo.com/api/oembed.json","formats":["json"]}]},{"provider_name":"UOL","provider_url":"https://mais.uol.com.br/","endpoints":[{"schemes":["https://*.uol.com.br/view/*","https://*.uol.com.br/video/*"],"url":"https://mais.uol.com.br/apiuol/v3/oembed/view","discovery":true}]},{"provider_name":"Ustream","provider_url":"http://www.ustream.tv","endpoints":[{"schemes":["http://*.ustream.tv/*","http://*.ustream.com/*"],"url":"http://www.ustream.tv/oembed","formats":["json"]}]},{"provider_name":"Uttles","provider_url":"http://uttles.com","endpoints":[{"schemes":["http://uttles.com/uttle/*"],"url":"http://uttles.com/api/reply/oembed","discovery":true}]},{"provider_name":"VeeR VR","provider_url":"http://veer.tv/","endpoints":[{"schemes":["http://veer.tv/videos/*"],"url":"https://api.veer.tv/oembed","discovery":true},{"schemes":["http://veervr.tv/videos/*"],"url":"https://api.veervr.tv/oembed","discovery":true}]},{"provider_name":"Verse","provider_url":"http://verse.media/","endpoints":[{"url":"http://verse.media/services/oembed/"}]},{"provider_name":"VEVO","provider_url":"http://www.vevo.com/","endpoints":[{"schemes":["http://www.vevo.com/*","https://www.vevo.com/*"],"url":"https://www.vevo.com/oembed","discovery":false}]},{"provider_name":"VideoJug","provider_url":"http://www.videojug.com","endpoints":[{"schemes":["http://www.videojug.com/film/*","http://www.videojug.com/interview/*"],"url":"http://www.videojug.com/oembed.{format}"}]},{"provider_name":"Vidlit","provider_url":"https://vidl.it/","endpoints":[{"schemes":["https://vidl.it/*"],"url":"https://api.vidl.it/oembed","discovery":true}]},{"provider_name":"Vimeo","provider_url":"https://vimeo.com/","endpoints":[{"schemes":["https://vimeo.com/*","https://vimeo.com/album/*/video/*","https://vimeo.com/channels/*/*","https://vimeo.com/groups/*/videos/*","https://vimeo.com/ondemand/*/*","https://player.vimeo.com/video/*"],"url":"https://vimeo.com/api/oembed.{format}","discovery":true}]},{"provider_name":"Vine","provider_url":"https://vine.co/","endpoints":[{"schemes":["http://vine.co/v/*","https://vine.co/v/*"],"url":"https://vine.co/oembed.json","discovery":true}]},{"provider_name":"Vlipsy","provider_url":"https://vlipsy.com/","endpoints":[{"schemes":["https://vlipsy.com/*"],"url":"https://vlipsy.com/oembed","discovery":true}]},{"provider_name":"Wiredrive","provider_url":"https://www.wiredrive.com/","endpoints":[{"schemes":["https://*.wiredrive.com/*"],"url":"http://*.wiredrive.com/present-oembed/","formats":["json"],"discovery":true}]},{"provider_name":"wizer.me","provider_url":"http://www.wizer.me/","endpoints":[{"schemes":["http://*.wizer.me/learn/*","https://*.wizer.me/learn/*","http://*.wizer.me/preview/*","https://*.wizer.me/preview/*"],"url":"http://app.wizer.me/api/oembed.{format}","discovery":true}]},{"provider_name":"Wootled","provider_url":"http://www.wootled.com/","endpoints":[{"url":"http://www.wootled.com/oembed"}]},{"provider_name":"WordPress.com","provider_url":"http://wordpress.com/","endpoints":[{"url":"http://public-api.wordpress.com/oembed/","discovery":true}]},{"provider_name":"YFrog","provider_url":"http://yfrog.com/","endpoints":[{"schemes":["http://*.yfrog.com/*","http://yfrog.us/*"],"url":"http://www.yfrog.com/api/oembed","formats":["json"]}]},{"provider_name":"YouTube","provider_url":"http://www.youtube.com/","endpoints":[{"url":"http://www.youtube.com/oembed","discovery":true}]}];
+
+/***/ }),
+
 /***/ "./node_modules/process/browser.js":
 /*!*****************************************!*\
   !*** ./node_modules/process/browser.js ***!
@@ -2059,6 +2935,19 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
+
+/***/ }),
+
+/***/ "./node_modules/promise-wtf/dist/promise-wtf.min.js":
+/*!**********************************************************!*\
+  !*** ./node_modules/promise-wtf/dist/promise-wtf.min.js ***!
+  \**********************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+/* WEBPACK VAR INJECTION */(function(global) {// promise-wtf@1.2.4, by @ndaidong - built on Fri, 23 Jun 2017 09:41:50 GMT - published under MIT license
+!function(n,e){ true?module.exports=e():undefined}(this,function(){"use strict";var n="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof self?self:{},e=function(n,e){if(!(n instanceof e))throw new TypeError("Cannot call a class as a function")},t=function(){function n(n,e){for(var t=0;t<e.length;t++){var r=e[t];r.enumerable=r.enumerable||!1,r.configurable=!0,"value"in r&&(r.writable=!0),Object.defineProperty(n,r.key,r)}}return function(e,t,r){return t&&n(e.prototype,t),r&&n(e,r),e}}();return function(n,e){return e={exports:{}},n(e,e.exports),e.exports}(function(r){var o=r.exports?"node":"browser",u=0,i=1,f=2,c=function(n){return n&&"[object Function]"==={}.toString.call(n)},l=function(){function n(t){e(this,n);var r=u,o=null,l=void 0,s=this,a=function(n){if(r===u)return o=n,!1;var e=r===f?n.onResolved:n.onRejected;return e?n.resolve(e(l)):r===f?n.resolve(l):n.reject(l)},d=function(n){r=i,l=n,o&&a(o)};return s.then=function(e,t){return new n(function(n,r){return a({onResolved:e,onRejected:t,resolve:n,reject:r})})},s.catch=function(n){return s.then(null,n)},t(function n(e){e&&c(e.then)?e.then(n,d):(r=f,l=e,o&&a(o))},d)}return t(n,null,[{key:"resolve",value:function(e){return new n(function(n){return n(e)})}},{key:"reject",value:function(e){return new n(function(n,t){return t(e)})}},{key:"all",value:function(e){var t=[],r=n.resolve(null);return e.forEach(function(n){r=r.then(function(){return n}).then(function(n){t.push(n)})}),r.then(function(){return t})}}]),n}(),s=("node"===o?n:window).Promise||l;s.prototype.finally=function(n){return this.then(function(e){return s.resolve(n()).then(function(){return e})})},s.series=function(n){return new s(function(e,t){var r=n.length;return function o(u){n[u](function(n){return n?t(n):u<r-1?o(u+1):e()})}(0)})},r.exports=s})});
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(/*! ./../../webpack/buildin/global.js */ "./node_modules/webpack/buildin/global.js")))
 
 /***/ }),
 
@@ -2714,27 +3603,123 @@ module.exports = g;
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
+// <<<<<<<<<<<<<<<< MARKDOWN >>>>>>>>>>>>>>>>>>
 var markdown = __webpack_require__(/*! markdown */ "./node_modules/markdown/lib/index.js").markdown;
+var urlLive = __webpack_require__(/*! oembed-providers */ "./node_modules/oembed-providers/providers.json");
 //var webpagePreview = require("webpage-preview");
 
-document.getElementById('send').addEventListener('click', populateMarkdown);
+document.getElementById('send').addEventListener('click', enableMarkdown);
 
-function populateMarkdown() {
-	var val = document.getElementById('inpText').value;
-	console.log(val);
-	document.getElementById('mark').innerHTML = markdown.toHTML(val);
+//use this for messages to support markdown. All messages must go through
+//this function to support markdown
+function enableMarkdown() {
+    //enter the id of chat box for this to get its value
+    var val = document.getElementById('inpText').value;
+    //enter id of where you want the message to be displayed, when user hits enter.
+    document.getElementById('mark').innerText += markdown.toHTML(val);
+}
+// <<<<<<<<<<<<< MARKDOWN ENDS >>>>>>>>>>>>>>>>>
+
+
+// <<<<<<<<<< FOR DESKTOP NOTIFICATIONS >>>>>>>>>>>>>
+
+// checks window state
+var vis = function () {
+    var stateKey,
+        eventKey,
+        keys = {
+        hidden: "visibilitychange",
+        webkitHidden: "webkitvisibilitychange",
+        mozHidden: "mozvisibilitychange",
+        msHidden: "msvisibilitychange"
+    };
+    for (stateKey in keys) {
+        if (stateKey in document) {
+            eventKey = keys[stateKey];
+            break;
+        }
+    }
+    return function (c) {
+        if (c) document.addEventListener(eventKey, c);
+        return !document[stateKey];
+    };
+}();
+
+var visible = vis(); // gives current state
+
+// registers a handler for visibility changes
+// enable web browser notifications as well when browser is active and
+// if not, keep both, desk and web notification avtive, write that
+// login instead of console statement
+vis(function () {
+    vis() ? console.log('visible') : DesktopNotification();
+});
+
+//0. give permission to browser to send notifications
+function DesktopNotification() {
+    console.log("permission");
+    var currentWindow = window;
+    if (Notification && Notification.permission === 'default') {
+        Notification.requestPermission(function (permission) {
+            if (!('permission' in Notification)) {
+                Notification.permission = permission;
+            }
+        });
+    }
+    desktopNotification(currentWindow);
 }
 
-// webpagePreview.generatePreview('http://www.google.com/', 
-// 	'google', APP_ROOT + '/public/previews', null, null, 
-// 	function(error, sizePaths) {
-//     if (error) {
-//         console.log(error);
-//     }
-//     else {
-//         console.log(sizePaths);
-//     }
-// });
+//1.check permission 
+//we can request permission here again if its value is 'default' //using the previously discussed code
+function desktopNotification(currentWindow) {
+    console.log('desk not called');
+    if (Notification.permission === "granted") {
+        console.log("granted");
+        var text = "Message can be displayed here";
+        sendDesktopNotification(text, currentWindow);
+    } else {
+        console.log("not granted");
+    }
+}
+
+//2. send Notification
+function sendDesktopNotification(text, currentWindow) {
+    let notification = new Notification('New Notification', {
+        //icon: "user profile icon, fetch from DB",
+        body: text,
+        tag: "multiple notifications"
+    });
+    //’tag’ handles muti tab scenario i.e when multiple tabs are 
+    // open then only one notification is sent
+
+    //3. handle notification events and set timeout 
+    notification.onclick = function () {
+        currentWindow.focus();
+    };
+    setTimeout(notification.close.bind(notification), 10000);
+}
+
+// <<<<<<<<<<<<<<<<<< DESKTOP NOTIFICATION ENDS >>>>>>>>>>>>>>>>
+
+
+// <<<<<<<<<<<<<< LIVE URL PREVIEW >>>>>>>>>>>>>>>>>>>
+
+//console.log(urlLive);
+// $.getJSON('https://api.embedly.com/1/oembed?' + $.param({
+//   url: 'https://www.youtube.com/watch?v=jofNR_WkoCE',
+//   key: ":key"
+// }));
+
+// // jQuery Embedly 
+// $.embedly.oembed('https://www.youtube.com/watch?v=jofNR_WkoCE', {key: ":key"});
+var { extract } = __webpack_require__(/*! oembed-parser */ "./node_modules/oembed-parser/index.js");
+
+let url = 'https://music.amazon.in/search/flo+rida';
+extract(url).then(data => {
+    console.log(data);
+}).catch(err => {
+    console.log(err);
+});
 
 /***/ }),
 

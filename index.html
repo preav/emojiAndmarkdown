@@ -5,8 +5,10 @@
 	<title> Emojis </title>
 	<!------- EMOJIS --------->
 	<script type="text/javascript" src="./node_modules/jquery/dist/jquery.js"></script>
+	<script type="text/javascript" src="./node_modules/emojione/lib/js/emojione.js"></script>
 	<link rel="stylesheet" type="text/css" href="./node_modules/emojionearea/dist/emojionearea.css">
 	<script type="text/javascript" src="./node_modules/emojionearea/dist/emojionearea.js"></script>
+  	<script src="http://cdn.embed.ly/jquery.embedly-3.1.2.min.js" type="text/javascript"></script>
 	<!------- EMOJIS END--------->
 </head>
 <body>
@@ -21,7 +23,11 @@
 	<textarea id="inpText"></textarea>
 	<button id="send"> Send </button>
 	<p id="mark"></p>
-	<script type="text/javascript" src='./build/bundle.js'></script>
 	<!------- MARKDOWN END--------->
+
+	<img id="showImage"/>
+	<div id="test"></div>
+	<video height="240" controls id="videoTest">
+	</video>
 </body>
 </html>
